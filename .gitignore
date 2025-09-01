@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.env
+
+# VS Code
+.vscode/
+
+# OS files
+.DS_Store
+
+# Project files
+conversations.json
+*.session
+*.session-journal
+bot_session.session
+memory.json
+mcp.json
+mcp.json
+data/
