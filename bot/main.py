@@ -6,7 +6,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from fastmcp import Client, FastMCP
+from fastmcp import FastMCP
 from telethon import TelegramClient, events
 from telethon.tl.functions.channels import LeaveChannelRequest
 
@@ -14,8 +14,6 @@ from telegram_bot import TelegramLLMBot
 from tools.lolcryption import lolcryption
 from tools.wolfram_alpha import wolfram_alpha
 from tools.simple import simple
-from util.combined_mcp import CombinedTools
-
 
 
 JASON = 172033414
@@ -37,7 +35,7 @@ API_HASH = os.getenv("TELEGRAM_API_HASH", "")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 LLM_API_URL = os.getenv("LLM_API_URL", "http://localhost:3000")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
-LLM_MODEL = os.getenv("LLM_MODEL", "qwen3.5:0.8b")
+LLM_MODEL = os.getenv("LLM_MODEL", "qwen3.5:latest")
 
 DATA_PATH = Path(os.getenv("DATA_PATH", "./data"))
 
@@ -49,11 +47,12 @@ async def main():
     try:
         loop = asyncio.get_event_loop()
         bot = TelegramClient(telegram_session_file, API_ID, API_HASH, loop=loop)
-        
+
         if CLIENT_PROFILE == "bot" and BOT_TOKEN:
             await bot.start(bot_token=BOT_TOKEN)
 
         async with bot:
+
             @bot.on(
                 events.NewMessage(
                     incoming=True, pattern=r"(?i)^/bye", from_users=(JASON)
@@ -62,16 +61,51 @@ async def main():
             async def leave(event: events.NewMessage.Event):
                 await bot(LeaveChannelRequest(event.chat_id))
 
-            @bot.on(events.NewMessage(incoming=True, pattern=r"(?i)^hey bot", from_users=(JASON)))
+            @bot.on(
+                events.NewMessage(
+                    incoming=True, pattern=r"(?i)^hey bot", from_users=(JASON)
+                )
+            )
             async def on_message(event: events.NewMessage.Event):
                 mcp = FastMCP("tools")
 
-                @mcp.tool
-                def send_message(chat_id: int, text: str):
+                @mcp.tool("send_response")
+                async def send_response(text: str):
                     """Send a message to a Telegram chat."""
-                    loop = asyncio.get_event_loop()
-                    loop.create_task(bot.send_message(chat_id, text))
-                    return f"Message sent to chat_id={chat_id}"
+                    await event.respond(text)
+                    return ""
+
+                @mcp.tool("send_poll")
+                async def send_poll(
+                    question: str, options: list[str], multiple_choice: bool = False
+                ):
+                    """Send a poll to the Telegram chat.
+
+                    Args:
+                        question: The poll question
+                        options: List of answer options (2-10 options)
+                        multiple_choice: Whether users can select multiple answers (default: False)
+                    """
+                    from telethon.tl.types import InputMediaPoll, Poll, PollAnswer
+                    from telethon.tl.types import TextWithEntities
+                    import random
+
+                    answers = []
+                    for i, opt in enumerate(options):
+                        answers.append(
+                            PollAnswer(TextWithEntities(opt, []), str(i + 1).encode())
+                        )
+
+                    poll = Poll(
+                        id=random.randint(1000, 10000),
+                        question=TextWithEntities(question, []),
+                        answers=answers,
+                        public_voters=True,
+                        quiz=False,
+                        multiple_choice=multiple_choice,
+                    )
+                    await event.respond(file=InputMediaPoll(poll=poll))
+                    return ""
 
                 mcp.mount(simple)
                 mcp.mount(lolcryption)
@@ -84,11 +118,9 @@ async def main():
                     llm_model=LLM_MODEL,
                 )
                 async with event.client.action(event.chat_id, "typing"):
-                    logger.debug(f"Received message: {event.raw_text} from {event.sender_id}")
-                    print(f"Received message: {event.raw_text} from {event.sender_id}")
+                    logger.info(f"Message from {event.sender_id}: {event.raw_text}")
 
                     await llm.generate_response(event)
-
 
             bot.loop.set_debug(True)
             await bot.run_until_disconnected()
