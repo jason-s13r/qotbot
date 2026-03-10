@@ -1,10 +1,12 @@
 import logging
 from telethon import events
 from sqlalchemy.orm import Session
+from datetime import datetime, timedelta
 
 from qotbot.database.models.user import User
 from qotbot.database.models.chat import Chat, ChatMember
 from qotbot.database.models.message import Message
+from qotbot.database.models.summary import DailySummary
 
 
 logger = logging.getLogger(__name__)
@@ -99,3 +101,34 @@ def get_recent_messages(
     logging.info(f"Retrieved {len(messages)} messages for chat {chat_id}")
 
     return list(reversed(messages))
+
+
+def get_chat_summary(session: Session, chat_id: int) -> DailySummary | None:
+    logging.info(f"Retrieving latest summary for chat {chat_id}")
+
+    summary = (
+        session.query(DailySummary)
+        .filter(DailySummary.chat_id == chat_id)
+        .order_by(DailySummary.summary_date.desc())
+        .first()
+    )
+
+    if summary:
+        logging.info(f"Found summary from {summary.summary_date}")
+    else:
+        logging.info(f"No summary found for chat {chat_id}")
+
+    return summary
+
+
+def get_chat_overall_summary(session: Session, chat_id: int) -> str | None:
+    logging.info(f"Retrieving overall summary for chat {chat_id}")
+
+    chat = session.get(Chat, chat_id)
+
+    if chat:
+        logging.info(f"Found overall summary for chat {chat_id}")
+        return chat.overall_summary
+    else:
+        logging.info(f"Chat {chat_id} not found")
+        return None

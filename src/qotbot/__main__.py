@@ -10,6 +10,8 @@ from qotbot.database import (
     get_session,
     store_message_from_event,
     get_recent_messages,
+    get_chat_summary,
+    get_chat_overall_summary,
 )
 from qotbot.database.models.message import Message
 
@@ -70,6 +72,8 @@ async def start():
                 )
 
                 recent_messages: list[Message] = []
+                overall_summary: str = ""
+                daily_summary_text: str = ""
 
                 with get_session(DATABASE_PATH) as session:
                     recent_messages = get_recent_messages(
@@ -81,7 +85,12 @@ async def start():
 
                     await store_message_from_event(session, event)
 
-                    # 2. Retrieve the overall summary for this chat.
+                    daily_summary = get_chat_summary(session, event.chat_id)
+                    if daily_summary:
+                        daily_summary_text = daily_summary.summary_text
+                        
+                    overall_summary = get_chat_overall_summary(session, event.chat_id)
+                    
 
                 # 3  Extract message media and prepare for use by the LLM.
                 # 4. Invoke classifier llm to decide if message needs a response
