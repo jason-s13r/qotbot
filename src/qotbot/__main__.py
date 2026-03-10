@@ -5,6 +5,7 @@ from pathlib import Path
 from fastmcp import FastMCP
 from telethon import TelegramClient, events
 
+from qotbot.database import init_db
 from qotbot.tools.telegram import TelegramProvider
 from qotbot.tools.wolfram_alpha import wolfram_alpha
 from qotbot.tools.lolcryption import lolcryption
@@ -45,7 +46,7 @@ logger.setLevel(logging.DEBUG)
 
 async def start():
     try:
-        # initialise database
+        init_db(DATABASE_PATH)
 
         loop = asyncio.get_event_loop()
         bot = TelegramClient(TELEGRAM_PROFILE, API_ID, API_HASH, loop=loop)
