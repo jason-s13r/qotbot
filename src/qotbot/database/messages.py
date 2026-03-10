@@ -71,7 +71,7 @@ def _create_message(session, event):
 async def store_message_from_event(
     session: Session, event: events.NewMessage.Event
 ) -> None:
-    logger.debug(f"Storing message {event.message.id} from chat {event.chat_id}")
+    logging.info(f"Storing message {event.message.id} from chat {event.chat_id}")
 
     sender = await event.get_sender()
 
@@ -80,4 +80,22 @@ async def store_message_from_event(
     _ensure_chat_member(session, user, chat)
     _create_message(session, event)
 
-    logger.debug(f"Message {event.message.id} stored successfully")
+    logging.info(f"Message {event.message.id} stored successfully")
+
+
+def get_recent_messages(
+    session: Session, chat_id: int, limit: int = 50
+) -> list[Message]:
+    logging.info(f"Retrieving last {limit} messages for chat {chat_id}")
+
+    messages = (
+        session.query(Message)
+        .filter(Message.chat_id == chat_id)
+        .order_by(Message.message_date.desc())
+        .limit(limit)
+        .all()
+    )
+
+    logging.info(f"Retrieved {len(messages)} messages for chat {chat_id}")
+
+    return list(reversed(messages))

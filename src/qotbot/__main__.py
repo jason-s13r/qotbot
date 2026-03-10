@@ -5,7 +5,14 @@ from pathlib import Path
 from fastmcp import FastMCP
 from telethon import TelegramClient, events
 
-from qotbot.database import init_db, get_session, store_message_from_event
+from qotbot.database import (
+    init_db,
+    get_session,
+    store_message_from_event,
+    get_recent_messages,
+)
+from qotbot.database.models.message import Message
+
 from qotbot.tools.telegram import TelegramProvider
 from qotbot.tools.wolfram_alpha import wolfram_alpha
 from qotbot.tools.lolcryption import lolcryption
@@ -33,7 +40,7 @@ log_file.parent.mkdir(parents=True, exist_ok=True)
 
 
 logging.basicConfig(
-    level=logging.ERROR,
+    level=logging.INFO,
     format="[%(asctime)s][%(levelname)s][%(name)s:%(lineno)s %(funcName)s()] %(message)s",
     handlers=[
         logging.handlers.TimedRotatingFileHandler(log_file, when="H", encoding="utf-8"),
@@ -41,7 +48,7 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 async def start():
@@ -58,15 +65,23 @@ async def start():
 
             @bot.on(events.NewMessage)
             async def on_new_message(event: events.NewMessage.Event):
-                logging.debug(
+                logging.info(
                     f"Received new message from {event.sender_id}: {event.raw_text}"
                 )
 
-                # 1. Retrieve last 50 messages from the database for context
-                
+                recent_messages: list[Message] = []
+
                 with get_session(DATABASE_PATH) as session:
+                    recent_messages = get_recent_messages(
+                        session, event.chat_id, limit=50
+                    )
+                    logger.debug(
+                        f"Retrieved {len(recent_messages)} recent messages for context"
+                    )
+
                     await store_message_from_event(session, event)
 
+                    # 2. Retrieve the overall summary for this chat.
 
                 # 3  Extract message media and prepare for use by the LLM.
                 # 4. Invoke classifier llm to decide if message needs a response
