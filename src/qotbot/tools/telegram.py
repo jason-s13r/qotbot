@@ -142,17 +142,6 @@ class TelegramProvider(Provider):
             logger.error(f"Error sending poll: {e}")
             return f"Error: {e}"
 
-    async def _stop_turn(self, chat_id: int):
-        """End the current turn. This tool MUST be called when you are done responding.
-
-        Args:
-            chat_id: The Telegram chat ID
-
-        Returns:
-            Empty string
-        """
-        return ""
-
 
 # bot = TelegramClient("bot", "api_id", "api_hash")
 # @bot.on(events.NewMessage(incoming=True, pattern=r"^(?!/)"))

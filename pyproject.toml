@@ -2,7 +2,7 @@
 name = "telegram-llm-bot-bot"
 version = "0.1.0"
 description = "Telegram bot with LLM integration"
-readme = "../README.md"
+readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "cryptg>=0.5.1",
@@ -19,3 +19,16 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "greenlet>=3.3.2",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+qotbot = "qotbot.__main__:main"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/qotbot"]
