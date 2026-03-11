@@ -10,14 +10,23 @@ from qotbot.database.messages import (
     get_sender_name,
 )
 from qotbot.database.users import create_or_update_bot_user
+from qotbot.database.chats import set_chat_can_respond
 from qotbot.database.models.summary import DailySummary
 
 __all__ = [
     "Base",
     "init_db",
+    "get_session",
     "User",
     "Chat",
     "ChatMember",
     "Message",
     "DailySummary",
+    "store_message_from_event",
+    "get_recent_messages",
+    "get_chat_summary",
+    "get_chat_overall_summary",
+    "get_sender_name",
+    "create_or_update_bot_user",
+    "set_chat_can_respond",
 ]

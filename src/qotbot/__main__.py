@@ -15,6 +15,8 @@ from qotbot.database import (
     get_chat_overall_summary,
     get_sender_name,
     create_or_update_bot_user,
+    set_chat_can_respond,
+    Chat,
 )
 
 from qotbot.database.models.user import User
@@ -58,12 +60,15 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+# logger.setLevel(logging.INFO)
 
 
 async def start():
     try:
+        logger.info("Initialising database:")
         init_db(DATABASE_PATH)
+
+        logger.info("Connecting to Telegram:")
 
         loop = asyncio.get_event_loop()
         bot = TelegramClient(TELEGRAM_PROFILE, API_ID, API_HASH, loop=loop)
@@ -91,6 +96,21 @@ async def start():
                     logger.error(f"Error leaving chat: {e}", exc_info=True)
                     await event.respond(f"Error leaving chat: {e}")
 
+            @bot.on(
+                events.NewMessage(
+                    pattern=r"(?i)^/(enable|disable)$", from_users=TELEGRAM_BOT_OWNER
+                )
+            )
+            async def handle_permit_responses(event: events.NewMessage.Event):
+                chat_id = event.chat_id
+                can_respond = event.raw_text.lower() == "/enable"
+
+                with get_session(DATABASE_PATH) as session:
+                    chat = await set_chat_can_respond(session, event, can_respond)
+                    await event.respond(
+                        f"Bot responding {'enabled' if chat.can_respond else 'disabled'} for this chat"
+                    )
+
             @bot.on(events.NewMessage)
             async def handle_message(event: events.NewMessage.Event):
                 logging.info(
@@ -102,9 +122,12 @@ async def start():
                 overall_summary: str = ""
                 sender_name: str = ""
 
-                # 1. Extract message media and prepare for use by the LLM.
-
                 with get_session(DATABASE_PATH) as session:
+                    chat = session.get(Chat, chat_id)
+                    if not chat or not chat.can_respond:
+                        await store_message_from_event(session, event)
+                        return
+
                     recent_messages = get_recent_messages(
                         session, event.chat_id, limit=50
                     )

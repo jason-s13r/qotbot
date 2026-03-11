@@ -1,5 +1,14 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, BigInteger, DateTime, ForeignKey, Text
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    Text,
+    Boolean,
+)
 from sqlalchemy.orm import relationship
 from qotbot.database.database import Base
 
@@ -13,6 +22,7 @@ class Chat(Base):
     username = Column(String, nullable=True)
     overall_summary = Column(Text, nullable=True)
     daily_summary_path = Column(String, nullable=True)
+    can_respond = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
