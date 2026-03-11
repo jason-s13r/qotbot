@@ -55,6 +55,10 @@ def _ensure_chat_member(session, user, chat):
 
 
 def _create_message(session, event):
+    reply_to_message_id = None
+    if event.message.reply_to:
+        reply_to_message_id = event.message.reply_to.msg_id
+        
     message = Message(
         id=event.message.id,
         chat_id=event.chat_id,
@@ -62,7 +66,7 @@ def _create_message(session, event):
         text=event.raw_text,
         message_date=event.message.date,
         is_reply=event.message.is_reply,
-        reply_to_message_id=event.message.reply_to.msg_id
+        reply_to_message_id=reply_to_message_id
         if event.message.is_reply
         else None,
     )

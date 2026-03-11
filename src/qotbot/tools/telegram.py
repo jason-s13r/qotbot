@@ -50,11 +50,6 @@ class TelegramProvider(Provider):
                 name="send_poll",
                 description="Send a poll to the Telegram chat.",
             ),
-            Tool.from_function(
-                self._stop_turn,
-                name="stop_turn",
-                description="End the current turn. This tool MUST be called when you are done responding.",
-            ),
         ]
 
     async def _get_sender_id(self) -> int | Any | None:

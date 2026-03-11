@@ -1,8 +1,10 @@
 import asyncio
+import json
 import logging
 import os
 from pathlib import Path
 from fastmcp import FastMCP
+from openai import AsyncOpenAI
 from telethon import TelegramClient, events
 
 from qotbot.database import (
@@ -10,11 +12,10 @@ from qotbot.database import (
     get_session,
     store_message_from_event,
     get_recent_messages,
-    get_chat_summary,
     get_chat_overall_summary,
 )
-from qotbot.database.models.message import Message
 
+from qotbot.llm.client import invoke_llm
 from qotbot.tools.telegram import TelegramProvider
 from qotbot.tools.wolfram_alpha import wolfram_alpha
 from qotbot.tools.lolcryption import lolcryption
@@ -22,6 +23,7 @@ from qotbot.tools.web_search import web_search
 
 
 CLIENT_PROFILE = os.getenv("CLIENT_PROFILE", "bot")
+BOT_NAME = os.getenv("BOT_NAME", "qotbot")
 
 API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
 API_HASH = os.getenv("TELEGRAM_API_HASH", "")
@@ -52,6 +54,69 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+CLASSIFIER_PROMPT = f"""You are a relevance classifier for a group chat AI assistant.
+Determine if the AI should respond to the recent messages.
+
+Respond with a JSON object in the following format:
+{{"needs_response": true/false, "reason": "brief explanation"}}
+
+TOOL USAGE (CRITICAL):
+- You MUST use the invoke_response tool when a response is needed.
+
+Consider:
+- The AI is named {BOT_NAME} and is an active participant in the chat.
+- Is the AI being addressed directly?
+- Is there a question directed at the AI?
+- Is the AI's input valuable to this conversation?
+- Or is this a side conversation the AI should skip?
+- If images/stickers are included, analyze their content for relevance
+- Consider the conversation context and flow
+- The AI should not respond to every message, only when it has something valuable to contribute
+"""
+
+
+CHAT_SYSTEM_PROMPT = f"""You're {BOT_NAME}, an active participant in a group chat with friends.
+
+CRITICAL: Messages in <chat_history> have ALREADY been seen and addressed by you.
+Do NOT re-respond to, repeat, or re-address anything in chat history.
+ONLY respond to the messages in <new_messages>.
+
+- Keep it chill and conversational, matching the energy of the chat
+- Be genuinely helpful when they need info, but don't be overly formal
+- TEXT LIKE A HUMAN: Send multiple rapid-fire messages naturally
+- BREAK thoughts into natural message chunks instead of one long response
+- Do not mention that you are an AI
+- Do not ask follow up questions unless REALLY needed
+
+TOOL USAGE (CRITICAL):
+- You MUST use the send_messages tool to send ALL messages to the chat
+- Your response will ONLY be sent to the chat if you use the send_messages tool
+- When you are finished, respond with DONE.
+"""
+
+TELEGRAM_FORMATTING = """
+You are a participant in a Telegram chat group that outputs messages using MarkdownV2 formatting.
+All responses must follow Telegram MarkdownV2 rules exactly.
+Key rules:
+
+1. **Bold** - use **text**
+2. __Italics__ - use __text__
+3. ~~Strikethrough~~ - use ~~text~~
+4. `Inline monospace` - use `text`
+5. Code blocks - use ```language\\ncode\\n```
+6. [Inline links](URL) - use [text](url)
+7. ||spoiler|| - use ||text||
+8. > quotes - use > text
+
+Rules for generating messages:
+- Do not use # headings, telegram does not support this.
+- Write naturally - do NOT add backslash escapes, the system handles escaping automatically.
+- For code blocks, use triple backticks with optional language specifier.
+- Ensure links are properly formatted as [text](URL) with valid URL.
+- Do not output any HTML or unsupported Markdown.
+
+Your goal: produce messages that, when sent in Telegram using MarkdownV2, display exactly as intended.
+"""
 
 async def start():
     try:
@@ -71,9 +136,8 @@ async def start():
                     f"Received new message from {event.sender_id}: {event.raw_text}"
                 )
 
-                recent_messages: list[Message] = []
+                recent_messages_text: str = ""
                 overall_summary: str = ""
-                daily_summary_text: str = ""
 
                 with get_session(DATABASE_PATH) as session:
                     recent_messages = get_recent_messages(
@@ -84,34 +148,50 @@ async def start():
                     )
 
                     await store_message_from_event(session, event)
-
-                    daily_summary = get_chat_summary(session, event.chat_id)
-                    if daily_summary:
-                        daily_summary_text = daily_summary.summary_text
-                        
                     overall_summary = get_chat_overall_summary(session, event.chat_id)
-                    
+
+                    recent_messages_text = "\n".join([f"<message sender_id={msg.sender_id} sender_name=>{msg.text}</message>: " for msg in recent_messages])
+
+                current_messages_text = "\n".join([f"<message sender_id={msg.sender_id} sender_name=>{msg.raw_text}</message>" for msg in [event]])
+
+                common_prompts = []
+                common_prompts.append({"role":"system", "content": f"<chat description>\n{overall_summary}\n</chat description>"})
+                common_prompts.append({"role":"system", "content": f"<chat history>\n{recent_messages_text}\n</chat history>"})
+                common_prompts.append({"role":"user", "content": f"<new messages>\n{current_messages_text}\n</new messages>"})
 
                 # 3  Extract message media and prepare for use by the LLM.
-                # 4. Invoke classifier llm to decide if message needs a response
-                #   - Provided a system prompt instructing the classifier of their purpose.
-                #   - If available, provided a summary of the chat as overall context about the chat.
-                #   - Provided the last 50 messages as recent messages context.
-                #   - Is provide with latest message as the target for classification.
-                # 5. If so, invoke chat participant llm to give a response:
-                #   - Provided a system prompt instructing the chat participant of their purpose and how to behave.
-                #   - Is provided with the classification decision.
-                #   - If available, provided a summary of the chat as overall context about the chat.
-                #   - Provided the last 50 messages as recent messages context.
-                #   - Is provided with latest message as the target for a response.
-                #   - Is given tools access so that it can respond using tool calls.
 
+                classifier_tools = FastMCP("classifier_tools")
                 chat_tools = FastMCP("tools", providers=[TelegramProvider(event)])
                 chat_tools.mount(wolfram_alpha)
                 chat_tools.mount(web_search)
-                chat_tools.mount(lolcryption)
+                chat_tools.mount(lolcryption)                
 
-                # await handle_new_message(event, tools)
+                @classifier_tools.tool
+                async def invoke_response(classification_decision: str):
+                    logger.info(f"classification decision: {classification_decision}")
+
+                    chat = AsyncOpenAI(base_url=LLM_API_URL, api_key=LLM_API_KEY)
+                    chat_prompts = []
+                    chat_prompts.append({"role": "system", "content": CHAT_SYSTEM_PROMPT})
+                    chat_prompts.append({"role": "system", "content": TELEGRAM_FORMATTING})
+                    
+                    chat_prompts.extend(common_prompts)
+                    classifier_prompts.append({"role":"system", "content": f"<classification decision>\n{classification_decision}\n</classification decision>"})
+                    classifier_prompts.extend(common_prompts)
+                    
+                    chat_result = await invoke_llm(chat, LLM_CHAT_MODEL, chat_prompts, chat_tools)
+                    logger.info(f"chat result: {chat_result}")
+
+                    return "ok"
+
+                classifier = AsyncOpenAI(base_url=LLM_API_URL, api_key=LLM_API_KEY)
+                classifier_prompts = []
+
+                classifier_prompts.append({"role":"system", "content": CLASSIFIER_PROMPT})
+                classifier_prompts.extend(common_prompts)
+                classification_result = await invoke_llm(classifier, LLM_CLASSIFIER_MODEL, classifier_prompts, classifier_tools)
+                logger.info(f"classification_result: {classification_result}")
 
             logger.info("Bot started successfully")
             bot.loop.set_debug(True)
