@@ -68,7 +68,7 @@ def _create_message_from_event(session, event):
     return message
 
 def _create_message(session, message):
-    message = Message(
+    entity = Message(
         id=message.id,
         chat_id=message.chat_id,
         sender_id=message.sender_id,
@@ -77,8 +77,8 @@ def _create_message(session, message):
         is_reply=message.is_reply,
         reply_to_message_id=message.reply_to.reply_to_msg_id if message.is_reply else None,
     )
-    session.add(message)
-    return message
+    session.add(entity)
+    return entity
 
 
 async def store_message_from_event(
@@ -95,7 +95,7 @@ async def store_message_from_event(
     logging.info(f"Message {event.message.id} stored successfully")
 
 async def store_message(session: Session, message):
-    logging.info(f"Storing message {message.id} from chat {chat_id}")
+    logging.info(f"Storing message {message.id} from chat {message.chat_id}")
     _create_message(session, message)
     logging.info(f"Message {message.id} stored successfully")
 
