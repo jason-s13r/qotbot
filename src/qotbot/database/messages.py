@@ -58,7 +58,7 @@ def _create_message(session, event):
     reply_to_message_id = None
     if event.message.reply_to:
         reply_to_message_id = event.message.reply_to.msg_id
-        
+
     message = Message(
         id=event.message.id,
         chat_id=event.chat_id,
@@ -66,9 +66,7 @@ def _create_message(session, event):
         text=event.raw_text,
         message_date=event.message.date,
         is_reply=event.message.is_reply,
-        reply_to_message_id=reply_to_message_id
-        if event.message.is_reply
-        else None,
+        reply_to_message_id=reply_to_message_id if event.message.is_reply else None,
     )
     session.add(message)
     return message
@@ -89,22 +87,39 @@ async def store_message_from_event(
     logging.info(f"Message {event.message.id} stored successfully")
 
 
-def get_recent_messages(
+def get_recent_messages_with_senders(
     session: Session, chat_id: int, limit: int = 50
-) -> list[Message]:
+) -> list[tuple[Message, User | None]]:
     logging.info(f"Retrieving last {limit} messages for chat {chat_id}")
 
-    messages = (
-        session.query(Message)
+    results = (
+        session.query(Message, User)
+        .outerjoin(User, Message.sender_id == User.id)
         .filter(Message.chat_id == chat_id)
         .order_by(Message.message_date.desc())
         .limit(limit)
         .all()
     )
 
-    logging.info(f"Retrieved {len(messages)} messages for chat {chat_id}")
+    logging.info(f"Retrieved {len(results)} messages for chat {chat_id}")
 
-    return list(reversed(messages))
+    return list(reversed(results))
+
+
+def get_sender_name(user: User | None) -> str:
+    if user is None:
+        return "Unknown User"
+
+    if user.first_name and user.last_name:
+        return f"{user.first_name} {user.last_name}"
+
+    if user.first_name:
+        return user.first_name
+
+    if user.username:
+        return f"@{user.username}"
+
+    return f"User {user.id}"
 
 
 def get_chat_summary(session: Session, chat_id: int) -> DailySummary | None:

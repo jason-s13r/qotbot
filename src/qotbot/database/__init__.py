@@ -4,9 +4,10 @@ from qotbot.database.models.chat import Chat, ChatMember
 from qotbot.database.models.message import Message
 from qotbot.database.messages import (
     store_message_from_event,
-    get_recent_messages,
+    get_recent_messages_with_senders,
     get_chat_summary,
     get_chat_overall_summary,
+    get_sender_name,
 )
 from qotbot.database.models.summary import DailySummary
 

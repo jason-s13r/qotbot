@@ -11,8 +11,10 @@ from qotbot.database import (
     init_db,
     get_session,
     store_message_from_event,
-    get_recent_messages,
+    get_recent_messages_with_senders,
     get_chat_overall_summary,
+    get_sender_name,
+    User,
 )
 
 from qotbot.llm.chatter import Chatter
@@ -94,13 +96,14 @@ async def start():
                 chat_id = event.chat_id
                 recent_messages_text: str = ""
                 overall_summary: str = ""
+                sender_name: str = ""
 
                 with get_session(DATABASE_PATH) as session:
-                    recent_messages = get_recent_messages(
+                    recent_messages_with_senders = get_recent_messages_with_senders(
                         session, event.chat_id, limit=50
                     )
                     logger.debug(
-                        f"Retrieved {len(recent_messages)} recent messages for context"
+                        f"Retrieved {len(recent_messages_with_senders)} recent messages for context"
                     )
 
                     await store_message_from_event(session, event)
@@ -108,17 +111,15 @@ async def start():
 
                     recent_messages_text = "\n".join(
                         [
-                            f"<message sender_id={msg.sender_id} sender_name={msg.sender_id}>{msg.text}</message>: "
-                            for msg in recent_messages
+                            f"<message sender_id={msg.sender_id} sender_name={get_sender_name(sender)}>{msg.text}</message>: "
+                            for msg, sender in recent_messages_with_senders
                         ]
                     )
 
-                current_messages_text = "\n".join(
-                    [
-                        f"<message sender_id={msg.sender_id} sender_name={event.sender_id}>{msg.raw_text}</message>"
-                        for msg in [event]
-                    ]
-                )
+                    sender = session.get(User, event.sender_id)
+                    sender_name = get_sender_name(sender)
+
+                current_messages_text = f"<message sender_id={event.sender_id} sender_name={sender_name}>{event.raw_text}</message>"
 
                 common_prompts = []
                 common_prompts.append(
