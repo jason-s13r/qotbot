@@ -142,7 +142,7 @@ class TelegramProvider(Provider):
                 quiz=False,
                 multiple_choice=multiple_choice,
             )
-            response = await self.event.send_message(self.event.chat_id, file=InputMediaPoll(poll=poll))
+            response = await self.event.client.send_message(self.event.chat_id, file=InputMediaPoll(poll=poll))
             await self._store_message(response)
             return ""
         except Exception as e:
