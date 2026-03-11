@@ -15,13 +15,24 @@ logger = logging.getLogger(__name__)
 def _create_or_update_user(session, sender, sender_id):
     user = session.get(User, sender_id)
     if not user:
-        user = User(
-            id=sender_id,
-            username=sender.username if sender else None,
-            first_name=sender.first_name if sender else None,
-            last_name=sender.last_name if sender else None,
-            is_bot=sender.bot if sender else False,
-        )
+        from telethon.tl.types import User as TelegramUser
+
+        if isinstance(sender, TelegramUser):
+            user = User(
+                id=sender_id,
+                username=sender.username if sender else None,
+                first_name=sender.first_name if sender else None,
+                last_name=sender.last_name if sender else None,
+                is_bot=sender.bot if sender else False,
+            )
+        else:
+            user = User(
+                id=sender_id,
+                username=None,
+                first_name=None,
+                last_name=None,
+                is_bot=False,
+            )
         session.add(user)
         logger.info(f"Created user {sender_id}")
     return user
@@ -62,10 +73,13 @@ def _create_message_from_event(session, event):
         text=event.raw_text,
         message_date=event.message.date,
         is_reply=event.message.is_reply,
-        reply_to_message_id=event.message.reply_to.reply_to_msg_id if event.message.is_reply else None,
+        reply_to_message_id=event.message.reply_to.reply_to_msg_id
+        if event.message.is_reply
+        else None,
     )
     session.add(message)
     return message
+
 
 def _create_message(session, message):
     entity = Message(
@@ -75,7 +89,9 @@ def _create_message(session, message):
         text=message.raw_text,
         message_date=message.date,
         is_reply=message.is_reply,
-        reply_to_message_id=message.reply_to.reply_to_msg_id if message.is_reply else None,
+        reply_to_message_id=message.reply_to.reply_to_msg_id
+        if message.is_reply
+        else None,
     )
     session.add(entity)
     return entity
@@ -94,10 +110,12 @@ async def store_message_from_event(
 
     logging.info(f"Message {event.message.id} stored successfully")
 
+
 async def store_message(session: Session, message):
     logging.info(f"Storing message {message.id} from chat {message.chat_id}")
     _create_message(session, message)
     logging.info(f"Message {message.id} stored successfully")
+
 
 def get_recent_messages(
     session: Session, chat_id: int, limit: int = 50
@@ -162,6 +180,7 @@ def get_chat_overall_summary(session: Session, chat_id: int) -> str | None:
     else:
         logging.info(f"Chat {chat_id} not found")
         return None
+
 
 def get_chat(session: Session, chat_id: int) -> Chat | None:
     logging.info(f"Retrieving chat {chat_id}")
