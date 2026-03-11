@@ -76,10 +76,9 @@ async def start():
         if BOT_TOKEN:
             await bot.start(bot_token=BOT_TOKEN)
 
-        with get_session(DATABASE_PATH) as session:
-            await create_or_update_bot_user(session, bot)
-
         async with bot:
+            with get_session(DATABASE_PATH) as session:
+                await create_or_update_bot_user(session, bot)
 
             @bot.on(
                 events.NewMessage(pattern=r"(?i)^/bye$", from_users=TELEGRAM_BOT_OWNER)
