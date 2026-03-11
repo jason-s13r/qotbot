@@ -162,3 +162,12 @@ def get_chat_overall_summary(session: Session, chat_id: int) -> str | None:
     else:
         logging.info(f"Chat {chat_id} not found")
         return None
+
+def get_chat(session: Session, chat_id: int) -> Chat | None:
+    logging.info(f"Retrieving chat {chat_id}")
+    chat = session.get(Chat, chat_id)
+    if chat:
+        logging.info(f"Found chat {chat_id}")
+    else:
+        logging.info(f"Chat {chat_id} not found")
+    return chat

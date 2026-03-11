@@ -16,7 +16,8 @@ TOOL USAGE (CRITICAL):
 - use reject_message when there is no response required.
 
 Consider:
-- The AI is named "{bot_name}" and is an active participant in the chat.
+- The AI is named {bot_identity}.
+- The AI is an active participant in the chat {chat_identity}.
 - Is the AI being addressed directly?
 - Is there a question directed at the AI?
 - Is the AI's input valuable to this conversation?
@@ -27,7 +28,7 @@ Consider:
 """)
 
 class Classifier(Agent):
-    def __init__(self, client: AsyncOpenAI, model: str, bot_name: str):
+    def __init__(self, client: AsyncOpenAI, model: str, bot_identity: str, chat_identity: str):
         super().__init__(client, model, [
-            {"role": "system", "content": CLASSIFIER_PROMPT.substitute(bot_name=bot_name)}
+            {"role": "system", "content": CLASSIFIER_PROMPT.substitute(bot_identity=bot_identity, chat_identity=chat_identity)}
         ])

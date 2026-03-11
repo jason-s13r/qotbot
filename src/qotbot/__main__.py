@@ -19,6 +19,7 @@ from qotbot.database import (
     Chat,
 )
 
+from qotbot.database.messages import get_chat
 from qotbot.database.models.user import User
 from qotbot.llm.chatter import Chatter
 from qotbot.llm.classifier import Classifier
@@ -121,11 +122,15 @@ async def start():
                 overall_summary: str = ""
                 sender_name: str = ""
 
+                chat_identity: str = f"(chat_id: {event.chat_id})"
+
                 with get_session(DATABASE_PATH) as session:
-                    chat = session.get(Chat, chat_id)
+                    chat = get_chat(session, chat_id)
                     if not chat or not chat.can_respond:
                         await store_message_from_event(session, event)
                         return
+                    
+                    chat_identity = f"{chat.title} ({chat_id})"
 
                     recent_messages = get_recent_messages(
                         session, event.chat_id, limit=50
@@ -168,6 +173,9 @@ async def start():
                     }
                 )
 
+                bot_user = await bot.get_me()
+                bot_identity = f"{BOT_NAME} ({bot_user.first_name} {bot_user.last_name}, @{bot_user.username})"
+
                 chat_tools = FastMCP(
                     "tools", providers=[TelegramProvider(event, DATABASE_PATH)]
                 )
@@ -184,8 +192,8 @@ async def start():
                     chatter = Chatter(
                         AsyncOpenAI(base_url=LLM_API_URL, api_key=LLM_API_KEY),
                         LLM_CHAT_MODEL,
-                        BOT_NAME,
-                        chat_id,
+                        bot_identity,
+                        chat_identity,
                     )
 
                     chat_result = await chatter.invoke(common_prompts, chat_tools)
@@ -199,9 +207,10 @@ async def start():
                     return "REJECTED"
 
                 classifier = Classifier(
-                    AsyncOpenAI(base_url=LLM_API_URL, api_key=LLM_API_KEY),
+                    AsyncOpenAI(base_url=LLM_API_URL, api_key=LLM_API_KEY, timeout=60.0, max_retries=0),
                     LLM_CLASSIFIER_MODEL,
-                    BOT_NAME,
+                    bot_identity,
+                    chat_identity
                 )
 
                 classification_result = await classifier.invoke(

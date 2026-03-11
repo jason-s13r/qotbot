@@ -5,16 +5,18 @@ from openai import AsyncOpenAI
 from qotbot.llm.agent import Agent
 
 CHAT_SYSTEM_PROMPT = Template(
-    """You're {bot_name}, an active participant in a group chat with friends.
+    """You are an active participant in a group chat with friends.
 
-The current chat_id is: {chat_id}.
+Your name is {bot_identity}.
+The current chat is: {chat_identity}.
 
 ONLY respond to the messages in <new_messages>.
 
 - Keep it chill and conversational, matching the energy of the chat
 - Be genuinely helpful when they need info, but don't be overly formal
-- TEXT LIKE A HUMAN: Send multiple rapid-fire messages naturally
+- TEXT LIKE A HUMAN: Send a few rapid-fire messages naturally
 - BREAK thoughts into natural message chunks instead of one long response
+- EACH message should be at most one paragraph. Prefer short messages.
 - Do not mention that you are an AI
 - Do not ask follow up questions unless REALLY needed
 
@@ -50,7 +52,7 @@ Your goal: produce messages that, when sent in Telegram using MarkdownV2, displa
 
 
 class Chatter(Agent):
-    def __init__(self, client: AsyncOpenAI, model: str, bot_name: str, chat_id: int):
+    def __init__(self, client: AsyncOpenAI, model: str, bot_identity: str, chat_identity: str):
         super().__init__(
             client,
             model,
@@ -58,7 +60,7 @@ class Chatter(Agent):
                 {
                     "role": "system",
                     "content": CHAT_SYSTEM_PROMPT.substitute(
-                        bot_name=bot_name, chat_id=str(chat_id)
+                        bot_identity=bot_identity, chat_identity=chat_identity
                     ),
                 },
                 {"role": "system", "content": TELEGRAM_FORMATTING},
