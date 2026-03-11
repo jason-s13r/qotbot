@@ -7,15 +7,23 @@ from fastmcp.tools import Tool
 from telethon import events
 from telethon.tl.types import InputMediaPoll, Poll, PollAnswer, TextWithEntities
 
+from qotbot.database.database import get_session
+from qotbot.database.messages import store_message
+
 logger = logging.getLogger(__name__)
 
 
 class TelegramProvider(Provider):
     """Provides resources and tools related to a telegram event."""
 
-    def __init__(self, event: events.NewMessage.Event):
+    def __init__(self, event: events.NewMessage.Event, DATABASE_PATH: str):
         super().__init__()
         self.event = event
+        self.database_path = DATABASE_PATH
+
+    async def _store_message(self, message):
+        with get_session(self.database_path) as session:
+            await store_message(session, message)
 
     async def _list_tools(self) -> Sequence[Tool]:
         return [
@@ -60,11 +68,13 @@ class TelegramProvider(Provider):
 
     async def _respond(self, message: str):
         event = self.event
-        await event.respond(message)
+        response = await event.respond(message)
+        await self._store_message(response)
 
     async def _reply(self, message: str):
         event = self.event
-        await event.reply(message)
+        reply = await event.reply(message)
+        await self._store_message(reply)
 
     async def _send_message(self, text: str):
         """Send a message to a Telegram chat using markdown formatting.
@@ -76,7 +86,8 @@ class TelegramProvider(Provider):
             Empty string on success
         """
         try:
-            await self.event.respond(text, parse_mode="markdown")
+            response = await self.event.respond(text, parse_mode="markdown")
+            await self._store_message(response)
             return ""
         except Exception as e:
             logger.error(f"Error sending message: {e}")
@@ -93,7 +104,8 @@ class TelegramProvider(Provider):
         """
         for text in messages:
             try:
-                await self.event.respond(text, parse_mode="markdown")
+                response = await self.event.respond(text, parse_mode="markdown")
+                await self._store_message(response)
             except Exception as e:
                 logger.error(f"Error sending message: {e}")
         return ""
@@ -102,7 +114,6 @@ class TelegramProvider(Provider):
         self,
         question: str,
         options: list[str],
-        chat_id: int,
         multiple_choice: bool = False,
     ):
         """Send a poll to the Telegram chat.
@@ -131,14 +142,10 @@ class TelegramProvider(Provider):
                 quiz=False,
                 multiple_choice=multiple_choice,
             )
-            await self.event.respond(file=InputMediaPoll(poll=poll))
+            response = await self.event.send_message(self.event.chat_id, file=InputMediaPoll(poll=poll))
+            await self._store_message(response)
             return ""
         except Exception as e:
             logger.error(f"Error sending poll: {e}")
             return f"Error: {e}"
 
-
-# bot = TelegramClient("bot", "api_id", "api_hash")
-# @bot.on(events.NewMessage(incoming=True, pattern=r"^(?!/)"))
-# async def on_new_message(event: events.NewMessage.Event):
-#     mcp = FastMCP("tools", providers=[TelegramProvider(event)])

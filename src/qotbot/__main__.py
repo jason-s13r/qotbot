@@ -11,12 +11,13 @@ from qotbot.database import (
     init_db,
     get_session,
     store_message_from_event,
-    get_recent_messages_with_senders,
+    get_recent_messages,
     get_chat_overall_summary,
     get_sender_name,
-    User,
+    create_or_update_bot_user,
 )
 
+from qotbot.database.models.user import User
 from qotbot.llm.chatter import Chatter
 from qotbot.llm.classifier import Classifier
 from qotbot.tools.telegram import TelegramProvider
@@ -70,6 +71,9 @@ async def start():
         if BOT_TOKEN:
             await bot.start(bot_token=BOT_TOKEN)
 
+        with get_session(DATABASE_PATH) as session:
+            await create_or_update_bot_user(session, bot)
+
         async with bot:
 
             @bot.on(
@@ -98,12 +102,14 @@ async def start():
                 overall_summary: str = ""
                 sender_name: str = ""
 
+                # 1. Extract message media and prepare for use by the LLM.
+
                 with get_session(DATABASE_PATH) as session:
-                    recent_messages_with_senders = get_recent_messages_with_senders(
+                    recent_messages = get_recent_messages(
                         session, event.chat_id, limit=50
                     )
                     logger.debug(
-                        f"Retrieved {len(recent_messages_with_senders)} recent messages for context"
+                        f"Retrieved {len(recent_messages)} recent messages for context"
                     )
 
                     await store_message_from_event(session, event)
@@ -111,26 +117,25 @@ async def start():
 
                     recent_messages_text = "\n".join(
                         [
-                            f"<message sender_id={msg.sender_id} sender_name={get_sender_name(sender)}>{msg.text}</message>: "
-                            for msg, sender in recent_messages_with_senders
+                            f"<message sender_id={msg.sender_id} sender_name={get_sender_name(msg.sender)}>{msg.text}</message>"
+                            for msg in recent_messages
                         ]
                     )
 
-                    sender = session.get(User, event.sender_id)
-                    sender_name = get_sender_name(sender)
+                    sender_name = get_sender_name(session.get(User, event.sender_id))
 
                 current_messages_text = f"<message sender_id={event.sender_id} sender_name={sender_name}>{event.raw_text}</message>"
 
                 common_prompts = []
                 common_prompts.append(
                     {
-                        "role": "system",
+                        "role": "assistant",
                         "content": f"<chat_summary>\n{overall_summary}\n</chat_summary>",
                     }
                 )
                 common_prompts.append(
                     {
-                        "role": "system",
+                        "role": "assistant",
                         "content": f"<chat_history>\n{recent_messages_text}\n</chat_history>",
                     }
                 )
@@ -141,8 +146,9 @@ async def start():
                     }
                 )
 
-                # 3  Extract message media and prepare for use by the LLM.
-                chat_tools = FastMCP("tools", providers=[TelegramProvider(event)])
+                chat_tools = FastMCP(
+                    "tools", providers=[TelegramProvider(event, DATABASE_PATH)]
+                )
                 chat_tools.mount(wolfram_alpha)
                 chat_tools.mount(web_search)
                 chat_tools.mount(lolcryption)

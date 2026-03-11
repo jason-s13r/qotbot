@@ -9,8 +9,6 @@ CHAT_SYSTEM_PROMPT = Template(
 
 The current chat_id is: {chat_id}.
 
-CRITICAL: Messages in <chat_history> have ALREADY been seen and addressed by you.
-Do NOT re-respond to, repeat, or re-address anything in chat history.
 ONLY respond to the messages in <new_messages>.
 
 - Keep it chill and conversational, matching the energy of the chat
@@ -23,7 +21,6 @@ ONLY respond to the messages in <new_messages>.
 TOOL USAGE (CRITICAL):
 - You MUST use the send_messages tool to send ALL messages to the chat
 - Your response will ONLY be sent to the chat if you use the send_messages tool
-- When you are finished, respond with DONE.
 """
 )
 

@@ -54,11 +54,7 @@ def _ensure_chat_member(session, user, chat):
     return chat_member
 
 
-def _create_message(session, event):
-    reply_to_message_id = None
-    if event.message.reply_to:
-        reply_to_message_id = event.message.reply_to.msg_id
-
+def _create_message_from_event(session, event):
     message = Message(
         id=event.message.id,
         chat_id=event.chat_id,
@@ -66,7 +62,20 @@ def _create_message(session, event):
         text=event.raw_text,
         message_date=event.message.date,
         is_reply=event.message.is_reply,
-        reply_to_message_id=reply_to_message_id if event.message.is_reply else None,
+        reply_to_message_id=event.message.reply_to.reply_to_msg_id if event.message.is_reply else None,
+    )
+    session.add(message)
+    return message
+
+def _create_message(session, message):
+    message = Message(
+        id=message.id,
+        chat_id=message.chat_id,
+        sender_id=message.sender_id,
+        text=message.raw_text,
+        message_date=message.date,
+        is_reply=message.is_reply,
+        reply_to_message_id=message.reply_to.reply_to_msg_id if message.is_reply else None,
     )
     session.add(message)
     return message
@@ -81,20 +90,22 @@ async def store_message_from_event(
 
     user = _create_or_update_user(session, sender, event.sender_id)
     chat = _create_or_update_chat(session, event)
-    _ensure_chat_member(session, user, chat)
-    _create_message(session, event)
+    _create_message_from_event(session, event)
 
     logging.info(f"Message {event.message.id} stored successfully")
 
+async def store_message(session: Session, message):
+    logging.info(f"Storing message {message.id} from chat {chat_id}")
+    _create_message(session, message)
+    logging.info(f"Message {message.id} stored successfully")
 
-def get_recent_messages_with_senders(
+def get_recent_messages(
     session: Session, chat_id: int, limit: int = 50
 ) -> list[tuple[Message, User | None]]:
     logging.info(f"Retrieving last {limit} messages for chat {chat_id}")
 
     results = (
-        session.query(Message, User)
-        .outerjoin(User, Message.sender_id == User.id)
+        session.query(Message)
         .filter(Message.chat_id == chat_id)
         .order_by(Message.message_date.desc())
         .limit(limit)

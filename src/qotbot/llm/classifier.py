@@ -16,7 +16,7 @@ TOOL USAGE (CRITICAL):
 - use reject_message when there is no response required.
 
 Consider:
-- The AI is named {bot_name} and is an active participant in the chat.
+- The AI is named "{bot_name}" and is an active participant in the chat.
 - Is the AI being addressed directly?
 - Is there a question directed at the AI?
 - Is the AI's input valuable to this conversation?
