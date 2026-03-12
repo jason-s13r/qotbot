@@ -5,8 +5,8 @@ from qotbot.llm.agent import Agent
 
 SUMMARISER_PROMPT = Template("""You are to summarise the transcript of a group chat conversation for the client Participant.
 
-- The client Participant is named {bot_identity}.
-- The current chat is {chat_identity}.
+- The client Participant is named $bot_identity.
+- The current chat is $chat_identity.
 - A prior summary of the conversation may be provided in <summary>.
                              
 Consider:

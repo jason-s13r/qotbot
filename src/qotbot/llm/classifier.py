@@ -7,8 +7,8 @@ from qotbot.llm.agent import Agent
 CLASSIFIER_PROMPT = Template("""You are a relevance classifier for a group chat Participant.
 Determine if the Participant should respond to the recent messages.
                               
-- The Participant is named {bot_identity}.
-- The current chat is {chat_identity}.
+- The Participant is named $bot_identity.
+- The current chat is $chat_identity.
 
 TOOL USAGE (CRITICAL):
 - ALWAYS call describe_image FIRST if an image or sticker is present in the message

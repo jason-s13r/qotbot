@@ -7,8 +7,8 @@ from qotbot.llm.agent import Agent
 CHAT_SYSTEM_PROMPT = Template(
     """You are an active participant in a group chat with friends.
 
-Your name is {bot_identity}.
-The current chat is: {chat_identity}.
+Your name is $bot_identity.
+The current chat is: $chat_identity.
 
 ONLY respond to the messages in <new_messages>.
 
