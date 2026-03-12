@@ -14,4 +14,3 @@ env/
 *.log
 spec/
 docs/
-*.md
