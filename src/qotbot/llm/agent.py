@@ -7,6 +7,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
 class Agent:
     def __init__(self, client: AsyncOpenAI, model: str, system: list[dict[str, Any]]):
         self._client = client
@@ -27,14 +28,14 @@ class Agent:
             for tool in available_tools
         ]
         return schemas
-    
+
     async def _call_tool(self, tool_call, tools: FastMCP | None = None):
         name = tool_call.function.name
         args = json.loads(tool_call.function.arguments)
 
         result = await tools.call_tool(name, args)
 
-        return { "role": "tool", "tool_call_id": tool_call.id, "content": result}
+        return {"role": "tool", "tool_call_id": tool_call.id, "content": result}
 
     async def _invoke(
         self,
@@ -69,10 +70,10 @@ class Agent:
         return None
 
     async def invoke(
-            self,
-            prompts: list[dict[str, Any]],
-            tools: FastMCP | None = None,
-            max_tokens: int = 1024,
+        self,
+        prompts: list[dict[str, Any]],
+        tools: FastMCP | None = None,
+        max_tokens: int = 1024,
     ) -> str | None:
         schemas = await self._tool_schema(tools)
         messages = self._system + prompts

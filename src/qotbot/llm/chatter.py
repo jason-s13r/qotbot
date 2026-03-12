@@ -24,6 +24,12 @@ ONLY respond to the messages in <new_messages>.
 TOOL USAGE (CRITICAL):
 - You MUST use the send_messages tool to send ALL messages to the chat
 - Your response will ONLY be sent to the chat if you use the send_messages tool
+
+IMAGE/STICKER RESPONSES:
+- Messages may include images, stickers, or other media
+- React naturally to visual content (e.g., comment on images, respond to sticker emotions)
+- If an image asks a question or needs a response, engage with it
+- Reference visual elements when relevant to the conversation
 """
 )
 
@@ -53,7 +59,9 @@ Your goal: produce messages that, when sent in Telegram using MarkdownV2, displa
 
 
 class Chatter(Agent):
-    def __init__(self, client: AsyncOpenAI, model: str, bot_identity: str, chat_identity: str):
+    def __init__(
+        self, client: AsyncOpenAI, model: str, bot_identity: str, chat_identity: str
+    ):
         super().__init__(
             client,
             model,

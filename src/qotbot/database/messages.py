@@ -66,6 +66,17 @@ def _ensure_chat_member(session, user, chat):
 
 
 def _create_message_from_event(session, event):
+    media = event.message.media
+    media_file_id = None
+    media_type = None
+
+    if media:
+        media_type = type(media).__name__.lower()
+        if hasattr(media, "photo") and media.photo:
+            media_file_id = str(media.photo.id)
+        elif hasattr(media, "document") and media.document:
+            media_file_id = str(media.document.id)
+
     message = Message(
         id=event.message.id,
         chat_id=event.chat_id,
@@ -76,12 +87,26 @@ def _create_message_from_event(session, event):
         reply_to_message_id=event.message.reply_to.reply_to_msg_id
         if event.message.is_reply
         else None,
+        media_file_id=media_file_id,
+        media_type=media_type if media else None,
+        image_description=None,
     )
     session.add(message)
     return message
 
 
 def _create_message(session, message):
+    media = message.media
+    media_file_id = None
+    media_type = None
+
+    if media:
+        media_type = type(media).__name__.lower()
+        if hasattr(media, "photo") and media.photo:
+            media_file_id = str(media.photo.id)
+        elif hasattr(media, "document") and media.document:
+            media_file_id = str(media.document.id)
+
     entity = Message(
         id=message.id,
         chat_id=message.chat_id,
@@ -92,6 +117,9 @@ def _create_message(session, message):
         reply_to_message_id=message.reply_to.reply_to_msg_id
         if message.is_reply
         else None,
+        media_file_id=media_file_id,
+        media_type=media_type if media else None,
+        image_description=None,
     )
     session.add(entity)
     return entity
@@ -119,7 +147,7 @@ async def store_message(session: Session, message):
 
 def get_recent_messages(
     session: Session, chat_id: int, limit: int = 50
-) -> list[tuple[Message, User | None]]:
+) -> list[Message]:
     logging.info(f"Retrieving last {limit} messages for chat {chat_id}")
 
     results = (
@@ -190,3 +218,19 @@ def get_chat(session: Session, chat_id: int) -> Chat | None:
     else:
         logging.info(f"Chat {chat_id} not found")
     return chat
+
+
+def store_image_description(
+    session: Session, message_id: int, chat_id: int, description: str
+) -> None:
+    logging.info(
+        f"Storing image description for message {message_id} in chat {chat_id}"
+    )
+    message = session.get(Message, message_id)
+    if message:
+        message.image_description = description
+        logging.info(f"Image description stored for message {message_id}")
+    else:
+        logging.warning(
+            f"Message {message_id} not found, cannot store image description"
+        )

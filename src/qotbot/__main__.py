@@ -14,6 +14,7 @@ from qotbot.database import (
     get_recent_messages,
     get_chat_overall_summary,
     get_sender_name,
+    store_image_description,
     create_or_update_bot_user,
     set_chat_can_respond,
     Chat,
@@ -27,6 +28,7 @@ from qotbot.tools.telegram import TelegramProvider
 from qotbot.tools.wolfram_alpha import wolfram_alpha
 from qotbot.tools.lolcryption import lolcryption
 from qotbot.tools.web_search import web_search
+from qotbot.utils.media import download_media_base64
 
 
 CLIENT_PROFILE = os.getenv("CLIENT_PROFILE", "bot")
@@ -121,6 +123,7 @@ async def start():
                 recent_messages_text: str = ""
                 overall_summary: str = ""
                 sender_name: str = ""
+                image_base64: str | None = None
 
                 chat_identity: str = f"(chat_id: {event.chat_id})"
 
@@ -129,7 +132,7 @@ async def start():
                     if not chat or not chat.can_respond:
                         await store_message_from_event(session, event)
                         return
-                    
+
                     chat_identity = f"{chat.title} ({chat_id})"
 
                     recent_messages = get_recent_messages(
@@ -140,18 +143,40 @@ async def start():
                     )
 
                     await store_message_from_event(session, event)
+                    session.flush()
                     overall_summary = get_chat_overall_summary(session, event.chat_id)
 
                     recent_messages_text = "\n".join(
                         [
-                            f"<message sender_id={msg.sender_id} sender_name={get_sender_name(msg.sender)}>{msg.text}</message>"
+                            f"<message sender_id={msg.sender_id} sender_name={get_sender_name(msg.sender)}>"
+                            f"{msg.text}"
+                            f"{f' [Image: {msg.image_description}]' if msg.image_description else ''}"
+                            f"</message>"
                             for msg in recent_messages
                         ]
                     )
 
                     sender_name = get_sender_name(session.get(User, event.sender_id))
 
-                current_messages_text = f"<message sender_id={event.sender_id} sender_name={sender_name}>{event.raw_text}</message>"
+                mime_type, image_base64 = await download_media_base64(event.message)
+
+                has_media = image_base64 is not None
+                message_content = f"<message sender_id={event.sender_id} sender_name={sender_name}>{event.raw_text}</message>"
+                if has_media:
+                    message_content = [
+                        {
+                            "type": "text",
+                            "text": f'<new_messages>\n<message has_media="true">{message_content}</message>\n</new_messages>',
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{image_base64}"
+                            },
+                        },
+                    ]
+                else:
+                    message_content = f'<new_messages>\n<message has_media="false">{message_content}</message>\n</new_messages>'
 
                 common_prompts = []
                 common_prompts.append(
@@ -169,7 +194,7 @@ async def start():
                 common_prompts.append(
                     {
                         "role": "user",
-                        "content": f"<new_messages>\n{current_messages_text}\n</new_messages>",
+                        "content": message_content,
                     }
                 )
 
@@ -183,20 +208,38 @@ async def start():
                 chat_tools.mount(web_search)
                 chat_tools.mount(lolcryption)
 
+                llmclient = AsyncOpenAI(
+                    base_url=LLM_API_URL,
+                    api_key=LLM_API_KEY,
+                    timeout=60.0,
+                    max_retries=0,
+                )
                 classifier_tools = FastMCP("classifier_tools")
+
+                @classifier_tools.tool
+                async def describe_image(description: str):
+                    """Store a description of the image seen in the message."""
+                    with get_session(DATABASE_PATH) as session:
+                        store_image_description(
+                            session, event.message.id, event.chat_id, description
+                        )
+                    return "Image description stored"
 
                 @classifier_tools.tool
                 async def approve_message(reason: str):
                     logger.info(f"classification approved: {reason}")
 
                     chatter = Chatter(
-                        AsyncOpenAI(base_url=LLM_API_URL, api_key=LLM_API_KEY),
+                        llmclient,
                         LLM_CHAT_MODEL,
                         bot_identity,
                         chat_identity,
                     )
 
-                    chat_result = await chatter.invoke(common_prompts, chat_tools)
+                    chat_result = await chatter.invoke(
+                        common_prompts,
+                        chat_tools,
+                    )
                     logger.info(f"chat result: {chat_result}")
 
                     return "APPROVED" if chat_result == "EMPTY" else chat_result
@@ -207,14 +250,15 @@ async def start():
                     return "REJECTED"
 
                 classifier = Classifier(
-                    AsyncOpenAI(base_url=LLM_API_URL, api_key=LLM_API_KEY, timeout=60.0, max_retries=0),
+                    llmclient,
                     LLM_CLASSIFIER_MODEL,
                     bot_identity,
-                    chat_identity
+                    chat_identity,
                 )
 
                 classification_result = await classifier.invoke(
-                    common_prompts, classifier_tools
+                    common_prompts,
+                    classifier_tools,
                 )
                 logger.info(f"classification_result: {classification_result}")
 

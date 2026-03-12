@@ -8,6 +8,7 @@ from qotbot.database.messages import (
     get_chat_summary,
     get_chat_overall_summary,
     get_sender_name,
+    store_image_description,
 )
 from qotbot.database.users import create_or_update_bot_user
 from qotbot.database.chats import set_chat_can_respond
@@ -27,6 +28,7 @@ __all__ = [
     "get_chat_summary",
     "get_chat_overall_summary",
     "get_sender_name",
+    "store_image_description",
     "create_or_update_bot_user",
     "set_chat_can_respond",
 ]

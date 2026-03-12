@@ -25,6 +25,7 @@ class Message(Base):
     reply_to_message_id = Column(BigInteger, nullable=True)
     media_file_id = Column(String, nullable=True)
     media_type = Column(String, nullable=True)
+    image_description = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     chat = relationship("Chat", back_populates="messages")
