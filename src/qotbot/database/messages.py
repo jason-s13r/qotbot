@@ -234,3 +234,19 @@ def store_image_description(
         logging.warning(
             f"Message {message_id} not found, cannot store image description"
         )
+
+
+def store_audio_transcription(
+    session: Session, message_id: int, chat_id: int, transcription: str
+) -> None:
+    logging.info(
+        f"Storing audio transcription for message {message_id} in chat {chat_id}"
+    )
+    message = session.get(Message, message_id)
+    if message:
+        message.audio_transcription = transcription
+        logging.info(f"Audio transcription stored for message {message_id}")
+    else:
+        logging.warning(
+            f"Message {message_id} not found, cannot store audio transcription"
+        )

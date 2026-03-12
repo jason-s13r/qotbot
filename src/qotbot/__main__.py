@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import os
 from pathlib import Path
@@ -15,9 +14,9 @@ from qotbot.database import (
     get_chat_overall_summary,
     get_sender_name,
     store_image_description,
+    store_audio_transcription,
     create_or_update_bot_user,
     set_chat_can_respond,
-    Chat,
 )
 
 from qotbot.database.messages import get_chat
@@ -29,6 +28,7 @@ from qotbot.tools.wolfram_alpha import wolfram_alpha
 from qotbot.tools.lolcryption import lolcryption
 from qotbot.tools.web_search import web_search
 from qotbot.utils.media import download_media_base64
+from qotbot.utils.whisper import WhisperService
 
 
 CLIENT_PROFILE = os.getenv("CLIENT_PROFILE", "bot")
@@ -42,6 +42,9 @@ LLM_API_URL = os.getenv("LLM_API_URL", "http://localhost:11434")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_CHAT_MODEL = os.getenv("LLM_CHAT_MODEL", "qwen3.5:4b")
 LLM_CLASSIFIER_MODEL = os.getenv("LLM_CLASSIFIER_MODEL", "qwen3.5:4b")
+
+WHISPER_MODEL = os.getenv("WHISPER_MODEL", "turbo")
+WHISPER_LANGUAGE = os.getenv("WHISPER_LANGUAGE", None)
 
 TELEGRAM_BOT_OWNER = int(os.getenv("TELEGRAM_BOT_OWNER", "0"))
 
@@ -64,6 +67,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 # logger.setLevel(logging.INFO)
+
+whisper_service: WhisperService | None = None
 
 
 async def start():
@@ -104,7 +109,6 @@ async def start():
                 )
             )
             async def handle_permit_responses(event: events.NewMessage.Event):
-                chat_id = event.chat_id
                 can_respond = event.raw_text.lower() == "/enable"
 
                 with get_session(DATABASE_PATH) as session:
@@ -151,6 +155,7 @@ async def start():
                             f"<message sender_id={msg.sender_id} sender_name={get_sender_name(msg.sender)}>"
                             f"{msg.text}"
                             f"{f' [Image: {msg.image_description}]' if msg.image_description else ''}"
+                            f"{f' [Audio: {msg.audio_transcription}]' if msg.audio_transcription else ''}"
                             f"</message>"
                             for msg in recent_messages
                         ]
@@ -158,15 +163,40 @@ async def start():
 
                     sender_name = get_sender_name(session.get(User, event.sender_id))
 
-                mime_type, image_base64 = await download_media_base64(event.message)
+                transcription: str = ""
+                if event.message.audio or event.message.voice:
+                    try:
+                        if not whisper_service:
+                            whisper_service = WhisperService(WHISPER_MODEL)
+                        audio_bytes = await event.message.download_media(bytes)
+                        if audio_bytes:
+                            transcription = await whisper_service.transcribe(
+                                audio_bytes, language=WHISPER_LANGUAGE
+                            )
+                            with get_session(DATABASE_PATH) as session:
+                                store_audio_transcription(
+                                    session,
+                                    event.message.id,
+                                    event.chat_id,
+                                    transcription,
+                                )
+                            logger.info(f"Audio transcribed: {transcription[:50]}...")
+                    except Exception as e:
+                        logger.error(
+                            f"Whisper transcription failed: {e}", exc_info=True
+                        )
 
-                has_media = image_base64 is not None
-                message_content = f"<message sender_id={event.sender_id} sender_name={sender_name}>{event.raw_text}</message>"
-                if has_media:
+                mime_type, image_base64 = await download_media_base64(event.message)
+                has_image = image_base64 is not None
+
+                transcript = f"[Audio: {transcription}]\n" if transcription else ""
+                message_content = f"<new_messages>\n<message sender_id={event.sender_id} sender_name={sender_name}>\n{event.raw_text}\n{transcript}</message>\n</new_messages>"
+
+                if has_image:
                     message_content = [
                         {
                             "type": "text",
-                            "text": f'<new_messages>\n<message has_media="true">{message_content}</message>\n</new_messages>',
+                            "text": message_content,
                         },
                         {
                             "type": "image_url",
@@ -175,8 +205,6 @@ async def start():
                             },
                         },
                     ]
-                else:
-                    message_content = f'<new_messages>\n<message has_media="false">{message_content}</message>\n</new_messages>'
 
                 common_prompts = []
                 common_prompts.append(
@@ -208,12 +236,7 @@ async def start():
                 chat_tools.mount(web_search)
                 chat_tools.mount(lolcryption)
 
-                llmclient = AsyncOpenAI(
-                    base_url=LLM_API_URL,
-                    api_key=LLM_API_KEY,
-                    timeout=60.0,
-                    max_retries=0,
-                )
+                llmclient = AsyncOpenAI(base_url=LLM_API_URL, api_key=LLM_API_KEY)
                 classifier_tools = FastMCP("classifier_tools")
 
                 @classifier_tools.tool

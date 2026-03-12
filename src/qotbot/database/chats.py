@@ -39,8 +39,8 @@ async def set_chat_can_respond(
             username=getattr(event.chat, "username", None),
             can_respond=can_respond,
         )
-        session.add(chat)
-        logger.info(f"Created chat {chat_id} with can_respond={can_respond}")
+        session.merge(chat)
+        logger.info(f"Created/merged chat {chat_id} with can_respond={can_respond}")
     else:
         chat.can_respond = can_respond
         logger.info(f"Updated chat {chat_id} can_respond={can_respond}")

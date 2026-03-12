@@ -26,6 +26,7 @@ class Message(Base):
     media_file_id = Column(String, nullable=True)
     media_type = Column(String, nullable=True)
     image_description = Column(Text, nullable=True)
+    audio_transcription = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     chat = relationship("Chat", back_populates="messages")

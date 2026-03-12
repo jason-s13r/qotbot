@@ -1,7 +1,10 @@
 import base64
 import logging
 
-from telethon.tl.types import MessageMediaPhoto, MessageMediaDocument
+from telethon.tl.types import (
+    MessageMediaPhoto,
+    MessageMediaDocument,
+)
 from telethon.tl.custom import Message
 
 logger = logging.getLogger(__name__)

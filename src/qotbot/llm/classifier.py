@@ -21,6 +21,7 @@ Consider:
 - Is the Participant's input valuable to this conversation?
 - Or is this a side conversation the Participant should skip?
 - If images/stickers are included, analyze their content for relevance
+- If audio/voice messages are included, analyze the transcribed text for relevance
 - Consider the conversation context and flow
 - The Participant should not respond to every message, only when it has something valuable to contribute
 - The Participant can interact with bots in the chat, so don't reject solely because the message came from a bot.
@@ -30,7 +31,12 @@ IMAGE/STICKER ANALYSIS:
 - ALWAYS call describe_image to store a description of any image you see
 - Analyze the visual content to understand context and relevance
 - Consider if the image/sticker is asking for a response or is part of the conversation flow
-- Stickers often convey emotions or reactions - respond appropriately if relevant""")
+- Stickers often convey emotions or reactions - respond appropriately if relevant
+
+AUDIO ANALYSIS:
+- Messages may include voice messages or audio files
+- Analyze the transcribed text to understand context and relevance
+- Consider if the audio message is asking for a response or is part of the conversation flow""")
 
 
 class Classifier(Agent):
