@@ -3,6 +3,7 @@ import logging
 import tempfile
 from pathlib import Path
 
+import librosa
 import whisper
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,16 @@ class WhisperService:
             logger.debug(f"Transcribing audio with Whisper ({self.model_name})")
 
             def _transcribe():
+                # Quick validation: check file size before loading
+                temp_file = Path(temp_path)
+                if temp_file.stat().st_size == 0:
+                    raise ValueError("Audio file is empty")
+
+                # Load audio to validate it has content
+                audio, sr = librosa.load(temp_path, sr=None)
+                if audio.size == 0 or len(audio) < sr * 0.1:
+                    raise ValueError("Audio file is empty or too short")
+
                 return self.model.transcribe(
                     temp_path, language=language if language else None, verbose=False
                 )
