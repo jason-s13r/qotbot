@@ -20,6 +20,7 @@ from qotbot.database import (
 )
 
 from qotbot.database.messages import get_chat
+from qotbot.database.models.message import Message
 from qotbot.database.models.user import User
 from qotbot.llm.chatter import Chatter
 from qotbot.llm.classifier import Classifier
@@ -117,8 +118,36 @@ async def start():
                         f"Bot responding {'enabled' if chat.can_respond else 'disabled'} for this chat"
                     )
 
+            @bot.on(events.NewMessage(pattern=r"(?i)^/(transcript)$"))
+            async def handle_show_transcript(event: events.NewMessage.Event):
+                if not event.reply_to:
+                    return
+
+                msg_id = event.reply_to.reply_to_msg_id
+
+                with get_session(DATABASE_PATH) as session:
+                    message = (
+                        session.query(Message)
+                        .filter(Message.id == msg_id, Message.chat_id == event.chat_id)
+                        .first()
+                    )
+
+                    if not message:
+                        return
+
+                    if message.audio_transcription:
+                        await event.reply(
+                            f"Audio transcription: {message.audio_transcription}"
+                        )
+
+                    if message.image_description:
+                        await event.reply(
+                            f"Image description: {message.image_description}"
+                        )
+
             @bot.on(events.NewMessage)
             async def handle_message(event: events.NewMessage.Event):
+                global whisper_service
                 logging.info(
                     f"Received new message from {event.sender_id}: {event.raw_text}"
                 )
