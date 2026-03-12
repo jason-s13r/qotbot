@@ -22,8 +22,8 @@ A Telegram bot with LLM integration for chat interactions, transcription, and mo
 ### 1. Clone the repository
 
 ```bash
-git clone <repository-url>
-cd telegram-llm-bot
+git clone https://github.com/jason-s13r/qotbot.git
+cd qotbot
 ```
 
 ### 2. Configure environment variables
@@ -52,7 +52,7 @@ uv sync
 ### 4. Run the bot
 
 ```bash
-uv run qotbot
+uv run --env-file .env qotbot
 ```
 
 ## Docker
@@ -60,8 +60,8 @@ uv run qotbot
 Build and run with Docker:
 
 ```bash
-docker build -t telegram-llm-bot .
-docker run --env-file .env telegram-llm-bot
+docker build -t qotbot .
+docker run --env-file .env qotbot
 ```
 
 ## Project Structure
