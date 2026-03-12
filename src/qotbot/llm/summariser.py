@@ -9,7 +9,8 @@ SUMMARISER_PROMPT = Template("""You are to summarise the transcript of a group c
 - A prior summary of the conversation may be provided in <summary>.
                              
 Consider:
-- Start with a one paragraph high-level summary of the entire chat, max 100 words. Followed by a separator line of four dashes.
+- Start with a two paragraphs for a high-level summary of the entire chat, max 100 words. Followed by a separator line of four dashes.
+- Then, provide a more comprehensive summary of the entire conversation.
 - Summarise the key points of the conversation in a concise manner.
 - Focus on the most important information and main topics discussed.
 - Exclude irrelevant details and side conversations.

@@ -200,7 +200,7 @@ async def start():
                     }
                 ]
 
-                summary = await summariser.invoke(prompts) or ""
+                summary = await summariser.invoke(prompts, max_completion_tokens=10000) or ""
                 logger.info(
                     f"Summary generated ({len(summary) if summary else 0} characters)"
                 )
