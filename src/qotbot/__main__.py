@@ -106,7 +106,8 @@ async def start():
                         await bot(LeaveChannelRequest(input_chat))
                 except Exception as e:
                     logger.error(f"Error leaving chat: {e}", exc_info=True)
-                    await event.respond(f"Error leaving chat: {e}")
+                    async with event.client.action(event.chat_id, "typing"):
+                        await event.respond(f"Error leaving chat: {e}")
 
             @bot.on(
                 events.NewMessage(
@@ -118,9 +119,10 @@ async def start():
 
                 with get_session(DATABASE_PATH) as session:
                     chat = await set_chat_can_respond(session, event, can_respond)
-                    await event.respond(
-                        f"Bot responding {'enabled' if chat.can_respond else 'disabled'} for this chat"
-                    )
+                    async with event.client.action(event.chat_id, "typing"):
+                        await event.respond(
+                            f"Bot responding {'enabled' if chat.can_respond else 'disabled'} for this chat"
+                        )
 
             @bot.on(events.NewMessage(pattern=r"(?i)^/transcript$"))
             async def handle_show_transcript(event: events.NewMessage.Event):
@@ -129,108 +131,110 @@ async def start():
                     logger.info("No reply_to found, ignoring")
                     return
 
-                msg_id = event.reply_to.reply_to_msg_id
-                logger.info(f"Looking up message id {msg_id} in chat {event.chat_id}")
+                async with event.client.action(event.chat_id, "typing"):
+                    msg_id = event.reply_to.reply_to_msg_id
+                    logger.info(f"Looking up message id {msg_id} in chat {event.chat_id}")
 
-                with get_session(DATABASE_PATH) as session:
-                    message = session.get(Message, (event.chat_id, msg_id))
+                    with get_session(DATABASE_PATH) as session:
+                        message = session.get(Message, (event.chat_id, msg_id))
 
-                    if not message:
-                        logger.warning(f"Message {msg_id} not found in database")
-                        return
+                        if not message:
+                            logger.warning(f"Message {msg_id} not found in database")
+                            return
 
-                    if message.audio_transcription:
-                        logger.info(f"Sending audio transcription for message {msg_id}")
-                        await event.reply(
-                            f"Audio transcription: {message.audio_transcription}"
-                        )
+                        if message.audio_transcription:
+                            logger.info(f"Sending audio transcription for message {msg_id}")
+                            await event.reply(
+                                f"Audio transcription: {message.audio_transcription}"
+                            )
 
-                    if message.image_description:
-                        logger.info(f"Sending image description for message {msg_id}")
-                        await event.reply(
-                            f"Image description: {message.image_description}"
-                        )
+                        if message.image_description:
+                            logger.info(f"Sending image description for message {msg_id}")
+                            await event.reply(
+                                f"Image description: {message.image_description}"
+                            )
 
             @bot.on(events.NewMessage(pattern=r"(?i)^/summary$"))
             async def handle_generate_summary(event: events.NewMessage.Event):
-                logger.info(
-                    f"/summary command received from {event.sender_id} in chat {event.chat_id}"
-                )
-                bot_user = await bot.get_me()
-                bot_identity = f"{BOT_NAME} ({bot_user.first_name} {bot_user.last_name}, @{bot_user.username})"
-
-                prior_summary: str = ""
-                transcript: str = ""
-
-                with get_session(DATABASE_PATH) as session:
-                    chat = get_chat(session, event.chat_id)
-
-                    if not chat:
-                        logger.warning(f"Chat {event.chat_id} not found in database")
-                        return
-
-                    prior_summary = chat.overall_summary
-                    chat_identity = f"{chat.title} ({chat.id})"
-                    messages = get_recent_messages(session, event.chat_id, limit=1000)
+                async with event.client.action(event.chat_id, "typing"):
                     logger.info(
-                        f"Retrieved {len(messages)} messages for summary generation"
+                        f"/summary command received from {event.sender_id} in chat {event.chat_id}"
                     )
+                    bot_user = await bot.get_me()
+                    bot_identity = f"{BOT_NAME} ({bot_user.first_name} {bot_user.last_name}, @{bot_user.username})"
 
-                    transcript = "\n".join(
-                        [
-                            f"<message sender_id={msg.sender_id} sender_name={get_sender_name(msg.sender)}>"
-                            f"{msg.text}"
-                            f"{f' [Image: {msg.image_description}]' if msg.image_description else ''}"
-                            f"{f' [Audio: {msg.audio_transcription}]' if msg.audio_transcription else ''}"
-                            f"</message>"
-                            for msg in messages
-                        ]
-                    )
-                    logger.info(f"Transcript length: {len(transcript)} characters")
+                    prior_summary: str = ""
+                    transcript: str = ""
 
-                summariser = Summariser(
-                    llmclient, LLM_CHAT_MODEL, bot_identity, chat_identity
-                )
-                logger.info("Invoking summariser LLM")
+                    with get_session(DATABASE_PATH) as session:
+                        chat = get_chat(session, event.chat_id)
 
-                prompts = [
-                    {
-                        "role": "user",
-                        "content": f"<summary>\n{prior_summary}\n</summary>\n<transcript>{transcript}</transcript>",
-                    }
-                ]
+                        if not chat:
+                            logger.warning(f"Chat {event.chat_id} not found in database")
+                            return
 
-                summary = await summariser.invoke(prompts, max_completion_tokens=10000) or ""
-                logger.info(
-                    f"Summary generated ({len(summary) if summary else 0} characters)"
-                )
-
-                with get_session(DATABASE_PATH) as session:
-                    chat = get_chat(session, event.chat_id)
-
-                    if not chat:
-                        logger.warning(
-                            f"Chat {event.chat_id} not found when saving summary"
+                        prior_summary = chat.overall_summary
+                        chat_identity = f"{chat.title} ({chat.id})"
+                        messages = get_recent_messages(session, event.chat_id, limit=1000)
+                        logger.info(
+                            f"Retrieved {len(messages)} messages for summary generation"
                         )
-                        return
 
-                    chat.overall_summary = summary or ""
-                    session.add(chat)
-                    logger.info("Summary saved to database")
+                        transcript = "\n".join(
+                            [
+                                f"<message sender_id={msg.sender_id} sender_name={get_sender_name(msg.sender)}>"
+                                f"{msg.text}"
+                                f"{f' [Image: {msg.image_description}]' if msg.image_description else ''}"
+                                f"{f' [Audio: {msg.audio_transcription}]' if msg.audio_transcription else ''}"
+                                f"</message>"
+                                for msg in messages
+                            ]
+                        )
+                        logger.info(f"Transcript length: {len(transcript)} characters")
 
-                if summary:
-                    with tempfile.NamedTemporaryFile(
-                        mode="w", suffix=".md", delete=False
-                    ) as f:
-                        f.write(summary)
-                        temp_path = f.name
+                    summariser = Summariser(
+                        llmclient, LLM_CHAT_MODEL, bot_identity, chat_identity
+                    )
+                    logger.info("Invoking summariser LLM")
 
-                    try:
-                        express = summary.split('----')[0].strip('#')[:1000]
-                        msg = await event.reply(express)
-                        await msg.reply(file=temp_path)
-                    finally:
-                        os.unlink(temp_path)
+                    prompts = [
+                        {
+                            "role": "user",
+                            "content": f"<summary>\n{prior_summary}\n</summary>\n<transcript>{transcript}</transcript>",
+                        }
+                    ]
+
+                    summary = await summariser.invoke(prompts, max_completion_tokens=10000) or ""
+                    logger.info(
+                        f"Summary generated ({len(summary) if summary else 0} characters)"
+                    )
+
+                    with get_session(DATABASE_PATH) as session:
+                        chat = get_chat(session, event.chat_id)
+
+                        if not chat:
+                            logger.warning(
+                                f"Chat {event.chat_id} not found when saving summary"
+                            )
+                            return
+
+                        chat.overall_summary = summary or ""
+                        session.add(chat)
+                        logger.info("Summary saved to database")
+
+                    if summary:
+                        with tempfile.NamedTemporaryFile(
+                            mode="w", suffix=".md", delete=False
+                        ) as f:
+                            f.write(summary)
+                            temp_path = f.name
+
+                        try:
+                            express = summary.split('----')[0].strip('#')[:1000]
+                            msg = await event.reply(express)
+                            await msg.reply(file=temp_path)
+                        finally:
+                            os.unlink(temp_path)
 
             @bot.on(events.NewMessage)
             async def handle_message(event: events.NewMessage.Event):
@@ -378,13 +382,14 @@ async def start():
                         chat_identity,
                     )
 
-                    chat_result = await chatter.invoke(
-                        common_prompts,
-                        chat_tools,
-                    )
-                    logger.info(f"chat result: {chat_result}")
+                    async with event.client.action(event.chat_id, "typing"):
+                        chat_result = await chatter.invoke(
+                            common_prompts,
+                            chat_tools,
+                        )
+                        logger.info(f"chat result: {chat_result}")
 
-                    return "APPROVED" if chat_result == "EMPTY" else chat_result
+                        return "APPROVED" if chat_result == "EMPTY" else chat_result
 
                 @classifier_tools.tool
                 async def reject_message(reason: str):

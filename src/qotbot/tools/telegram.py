@@ -68,13 +68,15 @@ class TelegramProvider(Provider):
 
     async def _respond(self, message: str):
         event = self.event
-        response = await event.respond(message)
-        await self._store_message(response)
+        async with event.client.action(event.chat_id, "typing"):
+            response = await event.respond(message)
+            await self._store_message(response)
 
     async def _reply(self, message: str):
         event = self.event
-        reply = await event.reply(message)
-        await self._store_message(reply)
+        async with event.client.action(event.chat_id, "typing"):
+            reply = await event.reply(message)
+            await self._store_message(reply)
 
     async def _send_message(self, text: str):
         """Send a message to a Telegram chat using markdown formatting.
@@ -86,9 +88,10 @@ class TelegramProvider(Provider):
             Empty string on success
         """
         try:
-            response = await self.event.respond(text, parse_mode="markdown")
-            await self._store_message(response)
-            return ""
+            async with self.event.client.action(self.event.chat_id, "typing"):
+                response = await self.event.respond(text, parse_mode="markdown")
+                await self._store_message(response)
+                return ""
         except Exception as e:
             logger.error(f"Error sending message: {e}")
             return f"Error: {e}"
@@ -104,8 +107,9 @@ class TelegramProvider(Provider):
         """
         for text in messages:
             try:
-                response = await self.event.respond(text, parse_mode="markdown")
-                await self._store_message(response)
+                async with self.event.client.action(self.event.chat_id, "typing"):
+                    response = await self.event.respond(text, parse_mode="markdown")
+                    await self._store_message(response)
             except Exception as e:
                 logger.error(f"Error sending message: {e}")
         return ""
@@ -142,9 +146,10 @@ class TelegramProvider(Provider):
                 quiz=False,
                 multiple_choice=multiple_choice,
             )
-            response = await self.event.client.send_message(self.event.chat_id, file=InputMediaPoll(poll=poll))
-            await self._store_message(response)
-            return ""
+            async with self.event.client.action(self.event.chat_id, "typing"):
+                response = await self.event.client.send_message(self.event.chat_id, file=InputMediaPoll(poll=poll))
+                await self._store_message(response)
+                return ""
         except Exception as e:
             logger.error(f"Error sending poll: {e}")
             return f"Error: {e}"
