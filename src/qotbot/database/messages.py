@@ -226,7 +226,7 @@ def store_image_description(
     logging.info(
         f"Storing image description for message {message_id} in chat {chat_id}"
     )
-    message = session.get(Message, message_id)
+    message = session.get(Message, (chat_id, message_id))
     if message:
         message.image_description = description
         logging.info(f"Image description stored for message {message_id}")
@@ -242,7 +242,7 @@ def store_audio_transcription(
     logging.info(
         f"Storing audio transcription for message {message_id} in chat {chat_id}"
     )
-    message = session.get(Message, message_id)
+    message = session.get(Message, (chat_id, message_id))
     if message:
         message.audio_transcription = transcription
         logging.info(f"Audio transcription stored for message {message_id}")

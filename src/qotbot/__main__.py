@@ -126,11 +126,7 @@ async def start():
                 msg_id = event.reply_to.reply_to_msg_id
 
                 with get_session(DATABASE_PATH) as session:
-                    message = (
-                        session.query(Message)
-                        .filter(Message.id == msg_id, Message.chat_id == event.chat_id)
-                        .first()
-                    )
+                    message = session.get(Message, (event.chat_id, msg_id))
 
                     if not message:
                         return
