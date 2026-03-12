@@ -30,6 +30,9 @@ class Agent:
         return schemas
 
     async def _call_tool(self, tool_call, tools: FastMCP | None = None):
+        if tools is None:
+            return {"role": "tool", "tool_call_id": tool_call.id, "content": "NO_TOOLS_AVAILABLE"}
+        
         name = tool_call.function.name
         args = json.loads(tool_call.function.arguments)
 
@@ -42,10 +45,10 @@ class Agent:
         messages: list[dict[str, Any]],
         tools: FastMCP | None = None,
         schemas: list[dict[str, Any]] = None,
-        max_tokens: int = 1024,
+        max_completion_tokens: int | None = None,
     ):
         response = await self._client.chat.completions.create(
-            max_tokens=max_tokens,
+            max_completion_tokens=max_completion_tokens,
             model=self._model,
             messages=messages,
             tool_choice="auto",
@@ -73,13 +76,13 @@ class Agent:
         self,
         prompts: list[dict[str, Any]],
         tools: FastMCP | None = None,
-        max_tokens: int = 1024,
+        max_completion_tokens: int | None = 1024,
     ) -> str | None:
-        schemas = await self._tool_schema(tools)
+        schemas = await self._tool_schema(tools) if tools else []
         messages = self._system + prompts
 
         result = None
         while result is None:
-            result = await self._invoke(messages, tools, schemas, max_tokens)
+            result = await self._invoke(messages, tools, schemas, max_completion_tokens)
 
         return result

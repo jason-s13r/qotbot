@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
+from typing import Any
 from fastmcp import FastMCP
 from openai import AsyncOpenAI
 from telethon import TelegramClient, events
@@ -24,6 +25,7 @@ from qotbot.database.models.message import Message
 from qotbot.database.models.user import User
 from qotbot.llm.chatter import Chatter
 from qotbot.llm.classifier import Classifier
+from qotbot.llm.summariser import Summariser
 from qotbot.tools.telegram import TelegramProvider
 from qotbot.tools.wolfram_alpha import wolfram_alpha
 from qotbot.tools.lolcryption import lolcryption
@@ -81,6 +83,7 @@ async def start():
 
         loop = asyncio.get_event_loop()
         bot = TelegramClient(TELEGRAM_PROFILE, API_ID, API_HASH, loop=loop)
+        llmclient = AsyncOpenAI(base_url=LLM_API_URL, api_key=LLM_API_KEY)
 
         if BOT_TOKEN:
             await bot.start(bot_token=BOT_TOKEN)
@@ -118,32 +121,125 @@ async def start():
                         f"Bot responding {'enabled' if chat.can_respond else 'disabled'} for this chat"
                     )
 
-            @bot.on(events.NewMessage(pattern=r"(?i)^/(transcript)$"))
+            @bot.on(events.NewMessage(pattern=r"(?i)^/transcript$"))
             async def handle_show_transcript(event: events.NewMessage.Event):
+                logger.info(f"/transcript command received from {event.sender_id}")
                 if not event.reply_to:
+                    logger.info("No reply_to found, ignoring")
                     return
 
                 msg_id = event.reply_to.reply_to_msg_id
+                logger.info(f"Looking up message id {msg_id} in chat {event.chat_id}")
 
                 with get_session(DATABASE_PATH) as session:
                     message = session.get(Message, (event.chat_id, msg_id))
 
                     if not message:
+                        logger.warning(f"Message {msg_id} not found in database")
                         return
 
                     if message.audio_transcription:
+                        logger.info(f"Sending audio transcription for message {msg_id}")
                         await event.reply(
                             f"Audio transcription: {message.audio_transcription}"
                         )
 
                     if message.image_description:
+                        logger.info(f"Sending image description for message {msg_id}")
                         await event.reply(
                             f"Image description: {message.image_description}"
                         )
 
+            @bot.on(events.NewMessage(pattern=r"(?i)^/summary$"))
+            async def handle_generate_summary(event: events.NewMessage.Event):
+                logger.info(
+                    f"/summary command received from {event.sender_id} in chat {event.chat_id}"
+                )
+                bot_user = await bot.get_me()
+                bot_identity = f"{BOT_NAME} ({bot_user.first_name} {bot_user.last_name}, @{bot_user.username})"
+
+                prior_summary: str = ""
+                transcript: str = ""
+
+                with get_session(DATABASE_PATH) as session:
+                    chat = get_chat(session, event.chat_id)
+
+                    if not chat:
+                        logger.warning(f"Chat {event.chat_id} not found in database")
+                        return
+
+                    prior_summary = chat.overall_summary
+                    chat_identity = f"{chat.title} ({chat.id})"
+                    messages = get_recent_messages(session, event.chat_id, limit=1000)
+                    logger.info(
+                        f"Retrieved {len(messages)} messages for summary generation"
+                    )
+
+                    transcript = "\n".join(
+                        [
+                            f"<message sender_id={msg.sender_id} sender_name={get_sender_name(msg.sender)}>"
+                            f"{msg.text}"
+                            f"{f' [Image: {msg.image_description}]' if msg.image_description else ''}"
+                            f"{f' [Audio: {msg.audio_transcription}]' if msg.audio_transcription else ''}"
+                            f"</message>"
+                            for msg in messages
+                        ]
+                    )
+                    logger.info(f"Transcript length: {len(transcript)} characters")
+
+                summariser = Summariser(
+                    llmclient, LLM_CHAT_MODEL, bot_identity, chat_identity
+                )
+                logger.info("Invoking summariser LLM")
+
+                prompts = [
+                    {
+                        "role": "user",
+                        "content": f"<summary>\n{prior_summary}\n</summary>\n<transcript>{transcript}</transcript>",
+                    }
+                ]
+
+                summary = await summariser.invoke(prompts) or ""
+                logger.info(
+                    f"Summary generated ({len(summary) if summary else 0} characters)"
+                )
+
+                with get_session(DATABASE_PATH) as session:
+                    chat = get_chat(session, event.chat_id)
+
+                    if not chat:
+                        logger.warning(
+                            f"Chat {event.chat_id} not found when saving summary"
+                        )
+                        return
+
+                    chat.overall_summary = summary or ""
+                    session.add(chat)
+                    logger.info("Summary saved to database")
+
+                import tempfile
+                import os
+
+                if summary:
+                    with tempfile.NamedTemporaryFile(
+                        mode="w", suffix=".md", delete=False
+                    ) as f:
+                        f.write(summary)
+                        temp_path = f.name
+
+                    try:
+                        express = summary.split('**Key Topics**')[0].strip('#')
+                        await event.reply(express, file=temp_path)
+                    finally:
+                        os.unlink(temp_path)
+
             @bot.on(events.NewMessage)
             async def handle_message(event: events.NewMessage.Event):
                 global whisper_service
+
+                if event.raw_text.startswith("/"):
+                    return
+
                 logging.info(
                     f"Received new message from {event.sender_id}: {event.raw_text}"
                 )
@@ -261,7 +357,6 @@ async def start():
                 chat_tools.mount(web_search)
                 chat_tools.mount(lolcryption)
 
-                llmclient = AsyncOpenAI(base_url=LLM_API_URL, api_key=LLM_API_KEY)
                 classifier_tools = FastMCP("classifier_tools")
 
                 @classifier_tools.tool
