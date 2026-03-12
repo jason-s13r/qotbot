@@ -4,17 +4,18 @@ from openai import AsyncOpenAI
 from qotbot.llm.agent import Agent
 
 SUMMARISER_PROMPT = Template("""You are to summarise the transcript of a group chat conversation for the client Participant.
-
 - The client Participant is named $bot_identity.
 - The current chat is $chat_identity.
 - A prior summary of the conversation may be provided in <summary>.
                              
 Consider:
+- Start with a one paragraph high-level summary of the entire chat, max 100 words. Followed by a separator line of four dashes.
 - Summarise the key points of the conversation in a concise manner.
 - Focus on the most important information and main topics discussed.
 - Exclude irrelevant details and side conversations.
 - Identify chat lore, injokes, recurring themes, and important context that may not be explicitly stated.
 - List the main participants in the conversation and their apparent roles and relationships.
+
 """)
 
 

@@ -2,10 +2,11 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import Any
 from fastmcp import FastMCP
 from openai import AsyncOpenAI
 from telethon import TelegramClient, events
+import tempfile
+import os
 
 from qotbot.database import (
     init_db,
@@ -217,9 +218,6 @@ async def start():
                     session.add(chat)
                     logger.info("Summary saved to database")
 
-                import tempfile
-                import os
-
                 if summary:
                     with tempfile.NamedTemporaryFile(
                         mode="w", suffix=".md", delete=False
@@ -228,8 +226,9 @@ async def start():
                         temp_path = f.name
 
                     try:
-                        express = summary.split('**Key Topics**')[0].strip('#')
-                        await event.reply(express, file=temp_path)
+                        express = summary.split('----')[0].strip('#')[:1000]
+                        msg = await event.reply(express)
+                        await msg.reply(file=temp_path)
                     finally:
                         os.unlink(temp_path)
 

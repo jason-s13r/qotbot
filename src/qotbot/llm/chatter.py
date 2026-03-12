@@ -22,6 +22,7 @@ ONLY respond to the messages in <new_messages>.
 - You can interact with bots in the chat.
 
 TOOL USAGE (CRITICAL):
+- Use as many tools as you deem necessary.
 - You MUST use the send_messages tool to send ALL messages to the chat
 - Your response will ONLY be sent to the chat if you use the send_messages tool
 
