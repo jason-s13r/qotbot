@@ -235,6 +235,19 @@ def store_image_description(
             f"Message {message_id} not found, cannot store image description"
         )
 
+def store_message_classification(session: Session, message_id: int, chat_id: int, classification: str) -> None:
+    logging.info(
+        f"Storing classification reason for message {message_id} in chat {chat_id}"
+    )
+    message = session.get(Message, (chat_id, message_id))
+    if message:
+        message.classification_reason = classification
+        logging.info(f"Classification stored for message {message_id}")
+    else:
+        logging.warning(
+            f"Message {message_id} not found, cannot store classification"
+        )
+
 
 def store_audio_transcription(
     session: Session, message_id: int, chat_id: int, transcription: str

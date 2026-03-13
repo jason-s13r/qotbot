@@ -31,12 +31,34 @@ class Agent:
 
     async def _call_tool(self, tool_call, tools: FastMCP | None = None):
         if tools is None:
-            return {"role": "tool", "tool_call_id": tool_call.id, "content": "NO_TOOLS_AVAILABLE"}
-        
+            return {
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": "NO_TOOLS_AVAILABLE",
+            }
+
         name = tool_call.function.name
         args = json.loads(tool_call.function.arguments)
 
-        result = await tools.call_tool(name, args)
+        try:
+            result = await tools.call_tool(name, args)
+            logger.info(
+                "Tool Call: [%s] %s args: %s\nRESULT: %s",
+                tool_call.id,
+                name,
+                args,
+                result,
+            )
+        except Exception as e:
+            logger.error(
+                "Tool Error: [%s] %s args: %s - %s",
+                tool_call.id,
+                name,
+                args,
+                e,
+                exc_info=True,
+            )
+            result = f"ERROR: {str(e)}"
 
         return {"role": "tool", "tool_call_id": tool_call.id, "content": result}
 
@@ -56,11 +78,13 @@ class Agent:
         )
 
         if response is None:
+            logger.warning("No response from LLM")
             return "EMPTY"
 
         message = response.choices[0].message
 
         if not message.tool_calls:
+            logger.info("LLM response: (no tools) %s", message.content)
             return message.content or "EMPTY"
 
         messages.append(message)

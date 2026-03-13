@@ -21,7 +21,7 @@ from qotbot.database import (
     set_chat_can_respond,
 )
 
-from qotbot.database.messages import get_chat
+from qotbot.database.messages import get_chat, store_message_classification
 from qotbot.database.models.message import Message
 from qotbot.database.models.user import User
 from qotbot.llm.chatter import Chatter
@@ -133,7 +133,9 @@ async def start():
 
                 async with event.client.action(event.chat_id, "typing"):
                     msg_id = event.reply_to.reply_to_msg_id
-                    logger.info(f"Looking up message id {msg_id} in chat {event.chat_id}")
+                    logger.info(
+                        f"Looking up message id {msg_id} in chat {event.chat_id}"
+                    )
 
                     with get_session(DATABASE_PATH) as session:
                         message = session.get(Message, (event.chat_id, msg_id))
@@ -143,15 +145,47 @@ async def start():
                             return
 
                         if message.audio_transcription:
-                            logger.info(f"Sending audio transcription for message {msg_id}")
+                            logger.info(
+                                f"Sending audio transcription for message {msg_id}"
+                            )
                             await event.reply(
                                 f"Audio transcription: {message.audio_transcription}"
                             )
 
                         if message.image_description:
-                            logger.info(f"Sending image description for message {msg_id}")
+                            logger.info(
+                                f"Sending image description for message {msg_id}"
+                            )
                             await event.reply(
                                 f"Image description: {message.image_description}"
+                            )
+
+            @bot.on(events.NewMessage(pattern=r"(?i)^/classification$"))
+            async def handle_show_classification(event: events.NewMessage.Event):
+                logger.info(f"/classification command received from {event.sender_id}")
+                if not event.reply_to:
+                    logger.info("No reply_to found, ignoring")
+                    return
+
+                async with event.client.action(event.chat_id, "typing"):
+                    msg_id = event.reply_to.reply_to_msg_id
+                    logger.info(
+                        f"Looking up message id {msg_id} in chat {event.chat_id}"
+                    )
+
+                    with get_session(DATABASE_PATH) as session:
+                        message = session.get(Message, (event.chat_id, msg_id))
+
+                        if not message:
+                            logger.warning(f"Message {msg_id} not found in database")
+                            return
+
+                        if message.classification_reason:
+                            logger.info(
+                                f"Sending classification reason for message {msg_id}"
+                            )
+                            await event.reply(
+                                f"Classification reason: {message.classification_reason}"
                             )
 
             @bot.on(events.NewMessage(pattern=r"(?i)^/summary$"))
@@ -170,12 +204,16 @@ async def start():
                         chat = get_chat(session, event.chat_id)
 
                         if not chat:
-                            logger.warning(f"Chat {event.chat_id} not found in database")
+                            logger.warning(
+                                f"Chat {event.chat_id} not found in database"
+                            )
                             return
 
                         prior_summary = chat.overall_summary
                         chat_identity = f"{chat.title} ({chat.id})"
-                        messages = get_recent_messages(session, event.chat_id, limit=1000)
+                        messages = get_recent_messages(
+                            session, event.chat_id, limit=1000
+                        )
                         logger.info(
                             f"Retrieved {len(messages)} messages for summary generation"
                         )
@@ -204,7 +242,10 @@ async def start():
                         }
                     ]
 
-                    summary = await summariser.invoke(prompts, max_completion_tokens=10000) or ""
+                    summary = (
+                        await summariser.invoke(prompts, max_completion_tokens=10000)
+                        or ""
+                    )
                     logger.info(
                         f"Summary generated ({len(summary) if summary else 0} characters)"
                     )
@@ -230,9 +271,13 @@ async def start():
                             temp_path = f.name
 
                         try:
-                            express = summary.split('----')[0].strip('#')[:1000]
+                            express = summary.split("----")[0].strip("#")[:1000]
                             msg = await event.reply(express)
-                            await msg.reply(file=temp_path)
+                            async with event.client.action(event.chat_id, "document"):
+                                file = await event.client.upload_file(
+                                    temp_path, file_name="summary.md"
+                                )
+                                await msg.reply(file=file)
                         finally:
                             os.unlink(temp_path)
 
@@ -314,13 +359,19 @@ async def start():
                 has_image = image_base64 is not None
 
                 transcript = f"[Audio: {transcription}]\n" if transcription else ""
-                message_content = f"<new_messages>\n<message sender_id={event.sender_id} sender_name={sender_name}>\n{event.raw_text}\n{transcript}</message>\n</new_messages>"
+                message_text = event.raw_text or event.text or ''
+                message_content = f"<new_messages>\n<message sender_id={event.sender_id} sender_name={sender_name}>\n{message_text}\n{transcript}</message>\n</new_messages>"
 
                 if has_image:
+                    caption = "(photo without caption)"
+                    if event.sticker:
+                       caption = "(sticker without caption)"
+
+                    message_text = event.raw_text or event.text or caption
                     message_content = [
                         {
                             "type": "text",
-                            "text": message_content,
+                            "text": f"<new_messages>\n<message sender_id={event.sender_id} sender_name={sender_name}>\n{message_text}\n{transcript}</message>\n</new_messages>",
                         },
                         {
                             "type": "image_url",
@@ -375,6 +426,14 @@ async def start():
                 async def approve_message(reason: str):
                     logger.info(f"classification approved: {reason}")
 
+                    with get_session(DATABASE_PATH) as session:
+                        store_message_classification(
+                            session,
+                            event.message.id,
+                            event.chat_id,
+                            f"classification approved: {reason}",
+                        )                            
+
                     chatter = Chatter(
                         llmclient,
                         LLM_CHAT_MODEL,
@@ -389,11 +448,23 @@ async def start():
                         )
                         logger.info(f"chat result: {chat_result}")
 
-                        return "APPROVED" if chat_result == "EMPTY" else chat_result
+                        if chat_result is None:
+                            return "APPROVED"
+                        if chat_result == "EMPTY":
+                            return "APPROVED"
+                        return chat_result
 
                 @classifier_tools.tool
                 async def reject_message(reason: str):
                     logger.info(f"classification rejected: {reason}")
+                    with get_session(DATABASE_PATH) as session:
+                        store_message_classification(
+                            session,
+                            event.message.id,
+                            event.chat_id,
+                            f"classification rejected: {reason}",
+                        )
+
                     return "REJECTED"
 
                 classifier = Classifier(

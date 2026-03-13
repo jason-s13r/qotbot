@@ -10,6 +10,7 @@ from qotbot.database.messages import (
     get_sender_name,
     store_image_description,
     store_audio_transcription,
+    store_message_classification,
 )
 from qotbot.database.users import create_or_update_bot_user
 from qotbot.database.chats import set_chat_can_respond
@@ -31,6 +32,7 @@ __all__ = [
     "get_sender_name",
     "store_image_description",
     "store_audio_transcription",
+    "store_message_classification",
     "create_or_update_bot_user",
     "set_chat_can_respond",
 ]

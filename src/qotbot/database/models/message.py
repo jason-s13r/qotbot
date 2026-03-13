@@ -28,6 +28,7 @@ class Message(Base):
     media_type = Column(String, nullable=True)
     image_description = Column(Text, nullable=True)
     audio_transcription = Column(Text, nullable=True)
+    classification_reason = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (PrimaryKeyConstraint("chat_id", "id"),)
