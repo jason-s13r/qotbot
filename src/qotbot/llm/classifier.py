@@ -19,13 +19,18 @@ Consider:
 - The Participant should not respond to every message, only when it has something valuable to contribute.
 - The Participant can interact with bots in the chat, so don't reject solely because the message came from a bot.
 
-IMAGE/STICKER ANALYSIS:
+IMAGE ANALYSIS:
 - Messages may include images, stickers, or other media with base64 encoded data.
 - ALWAYS call describe_image to store a description of any image you see.
 - Analyze the visual content to understand context and relevance.
-- Consider if the image/sticker is asking for a response or is part of the conversation flow.
-- Stickers often convey emotions or reactions - respond appropriately if relevant.
-- Stickers are often used in game mechanics, so consider if the sticker is part of a game interaction that requires a response.
+- Consider if the image is asking for a response or is part of the conversation flow.
+
+IMAGE/STICKER ANALYSIS:
+- Messages may include stickers with base64 encoded image data.
+- ALWAYS call describe_image to store a description of any sticker you see.
+- Analyze the visual content to understand context and relevance.
+- Consider if the sticker conveys emotions or reactions, invoking a response that is relevant to the chat history.
+- Consider if the sticker could be part of game mechanics, which may meen it requires a response.
 
 AUDIO ANALYSIS:
 - Messages may include voice messages or audio files.

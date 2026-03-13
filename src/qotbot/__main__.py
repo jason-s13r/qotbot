@@ -184,9 +184,7 @@ async def start():
                             logger.info(
                                 f"Sending classification reason for message {msg_id}"
                             )
-                            await event.reply(
-                                f"Classification reason: {message.classification_reason}"
-                            )
+                            await event.reply(message.classification_reason)
 
             @bot.on(events.NewMessage(pattern=r"(?i)^/summary$"))
             async def handle_generate_summary(event: events.NewMessage.Event):
@@ -384,13 +382,13 @@ async def start():
                 common_prompts = []
                 common_prompts.append(
                     {
-                        "role": "assistant",
+                        "role": "user",
                         "content": f"<chat_summary>\n{overall_summary}\n</chat_summary>",
                     }
                 )
                 common_prompts.append(
                     {
-                        "role": "assistant",
+                        "role": "user",
                         "content": f"<chat_history>\n{recent_messages_text}\n</chat_history>",
                     }
                 )
