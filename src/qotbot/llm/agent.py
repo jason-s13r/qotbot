@@ -127,12 +127,15 @@ class Agent:
         prompts: list[dict[str, Any]],
         tools: FastMCP | None = None,
         max_completion_tokens: int | None = 1024,
+        max_iterations: int | None = 5
     ) -> str | None:
         schemas = await self._tool_schema(tools) if tools else []
         messages = self._system + prompts
 
         result = None
-        while result is None:
+        iter = 0
+        while result is None and (iter < max_iterations or max_iterations is None):
+            iter += 1
             result = await self._invoke(messages, tools, schemas, max_completion_tokens)
 
         return result

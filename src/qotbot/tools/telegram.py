@@ -71,12 +71,14 @@ class TelegramProvider(Provider):
         async with event.client.action(event.chat_id, "typing"):
             response = await event.respond(message)
             await self._store_message(response)
+            return "Message sent"
 
     async def _reply(self, message: str):
         event = self.event
         async with event.client.action(event.chat_id, "typing"):
             reply = await event.reply(message)
             await self._store_message(reply)
+            return "Reply sent"
 
     async def _send_message(self, text: str):
         """Send a message to a Telegram chat using markdown formatting.
@@ -85,13 +87,13 @@ class TelegramProvider(Provider):
             text: The message text (markdown format)
 
         Returns:
-            Empty string on success
+            "Message sent" on success
         """
         try:
             async with self.event.client.action(self.event.chat_id, "typing"):
                 response = await self.event.respond(text, parse_mode="markdown")
                 await self._store_message(response)
-                return ""
+                return "Message sent"
         except Exception as e:
             logger.error(f"Error sending message: {e}")
             return f"Error: {e}"
@@ -103,7 +105,7 @@ class TelegramProvider(Provider):
             messages: List of message texts (markdown format)
 
         Returns:
-            Empty string on success
+            "{len(messages)} messages sent" on success
         """
         for text in messages:
             try:
@@ -112,7 +114,7 @@ class TelegramProvider(Provider):
                     await self._store_message(response)
             except Exception as e:
                 logger.error(f"Error sending message: {e}")
-        return ""
+        return f"{len(messages)} messages sent"
 
     async def _send_poll(
         self,
@@ -125,11 +127,10 @@ class TelegramProvider(Provider):
         Args:
             question: The poll question
             options: List of answer options (2-10 options)
-            chat_id: The Telegram chat ID to send to
             multiple_choice: Whether users can select multiple answers (default: False)
 
         Returns:
-            Empty string on success
+            "Poll sent" on success
         """
         try:
             answers = []
@@ -147,10 +148,11 @@ class TelegramProvider(Provider):
                 multiple_choice=multiple_choice,
             )
             async with self.event.client.action(self.event.chat_id, "typing"):
-                response = await self.event.client.send_message(self.event.chat_id, file=InputMediaPoll(poll=poll))
+                response = await self.event.client.send_message(
+                    self.event.chat_id, file=InputMediaPoll(poll=poll)
+                )
                 await self._store_message(response)
-                return ""
+                return "Poll sent"
         except Exception as e:
             logger.error(f"Error sending poll: {e}")
             return f"Error: {e}"
-
