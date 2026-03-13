@@ -46,7 +46,7 @@ class TelegramProvider(Provider):
             Tool.from_function(
                 self._send_message,
                 name="send_message",
-                description="Send a message to a Telegram chat using MarkdownV2 formatting.",
+                description="Send a message to a Telegram chat using markdown formatting.",
             ),
             Tool.from_function(
                 self._send_messages,

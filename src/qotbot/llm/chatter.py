@@ -47,8 +47,8 @@ IMAGE/STICKER RESPONSES:
 )
 
 TELEGRAM_FORMATTING = """
-You are a participant in a Telegram chat group that outputs messages using MarkdownV2 formatting.
-All responses must follow Telegram MarkdownV2 rules exactly.
+You are a participant in a Telegram chat group that outputs messages using markdown formatting.
+All responses must follow Telegram markdown rules exactly.
 Key rules:
 
 1. **Bold** - use **text**
@@ -67,7 +67,7 @@ Rules for generating messages:
 - Ensure links are properly formatted as [text](URL) with valid URL.
 - Do not output any HTML or unsupported Markdown.
 
-Your goal: produce messages that, when sent in Telegram using MarkdownV2, display exactly as intended.
+Your goal: produce messages that, when sent in Telegram using markdown, display exactly as intended.
 """
 
 
