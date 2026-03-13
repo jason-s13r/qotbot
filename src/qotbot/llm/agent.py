@@ -2,10 +2,35 @@ import asyncio
 import json
 import logging
 from fastmcp import FastMCP
+from fastmcp.tools import ToolResult
 from openai import AsyncOpenAI
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_tool_result_text(result: ToolResult) -> str:
+    """
+    Extract text string from FastMCP ToolResult for LLM tool response format.
+
+    Priority order:
+    1. structured_content['result'] if available (clean data format)
+    2. First TextContent.text from content list
+    3. Fallback to string representation
+
+    Future extensibility: Can add ImageContent, AudioContent handling here.
+    """
+    if result.structured_content:
+        if "result" in result.structured_content:
+            return str(result.structured_content["result"])
+
+    if result.content:
+        first_block = result.content[0]
+        if hasattr(first_block, "text"):
+            return first_block.text
+        return str(first_block)
+
+    return str(result) if result is not None else "EMPTY_RESULT"
 
 
 class Agent:
@@ -49,6 +74,8 @@ class Agent:
                 args,
                 result,
             )
+            content_text = _extract_tool_result_text(result)
+            return {"role": "tool", "tool_call_id": tool_call.id, "content": content_text}
         except Exception as e:
             logger.error(
                 "Tool Error: [%s] %s args: %s - %s",
@@ -58,9 +85,8 @@ class Agent:
                 e,
                 exc_info=True,
             )
-            result = f"ERROR: {str(e)}"
-
-        return {"role": "tool", "tool_call_id": tool_call.id, "content": result}
+            return {"role": "tool", "tool_call_id": tool_call.id, "content": f"ERROR: {str(e)}"}
+        
 
     async def _invoke(
         self,

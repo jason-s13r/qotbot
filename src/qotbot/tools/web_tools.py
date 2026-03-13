@@ -1,6 +1,5 @@
 import os
 import aiohttp
-import requests
 from fastmcp import FastMCP
 
 web_tools = FastMCP("Web Search")
