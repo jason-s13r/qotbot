@@ -1,7 +1,6 @@
-import logging
 from string import Template
-
 from openai import AsyncOpenAI
+
 from qotbot.llm.agent import Agent
 
 CHAT_SYSTEM_PROMPT = Template(

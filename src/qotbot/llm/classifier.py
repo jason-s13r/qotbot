@@ -1,6 +1,6 @@
 from string import Template
-
 from openai import AsyncOpenAI
+
 from qotbot.llm.agent import Agent
 
 CLASSIFIER_PROMPT = Template("""You are a relevance classifier for a group chat Participant.

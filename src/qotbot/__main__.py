@@ -6,7 +6,6 @@ from fastmcp import FastMCP
 from openai import AsyncOpenAI
 from telethon import TelegramClient, events
 import tempfile
-import os
 
 from qotbot.database import (
     init_db,
@@ -30,7 +29,8 @@ from qotbot.llm.summariser import Summariser
 from qotbot.tools.telegram import TelegramProvider
 from qotbot.tools.wolfram_alpha import wolfram_alpha
 from qotbot.tools.lolcryption import lolcryption
-from qotbot.tools.web_search import web_search
+from qotbot.tools.web_tools import web_tools
+from qotbot.tools.date_tools import date_tool
 from qotbot.utils.media import download_media_base64
 from qotbot.utils.whisper import WhisperService
 
@@ -402,12 +402,14 @@ async def start():
                 bot_user = await bot.get_me()
                 bot_identity = f"{BOT_NAME} ({bot_user.first_name} {bot_user.last_name}, @{bot_user.username})"
 
-                chat_tools = FastMCP(
-                    "tools", providers=[TelegramProvider(event, DATABASE_PATH)]
-                )
+                chatter = Chatter(llmclient, LLM_CHAT_MODEL, bot_identity, chat_identity)
+                classifier = Classifier(llmclient,LLM_CLASSIFIER_MODEL,bot_identity,chat_identity)
+
+                chat_tools = FastMCP("tools", providers=[TelegramProvider(event, DATABASE_PATH)])
                 chat_tools.mount(wolfram_alpha)
-                chat_tools.mount(web_search)
+                chat_tools.mount(web_tools)
                 chat_tools.mount(lolcryption)
+                chat_tools.mount(date_tool)
 
                 classifier_tools = FastMCP("classifier_tools")
 
@@ -430,14 +432,7 @@ async def start():
                             event.message.id,
                             event.chat_id,
                             f"classification approved: {reason}",
-                        )                            
-
-                    chatter = Chatter(
-                        llmclient,
-                        LLM_CHAT_MODEL,
-                        bot_identity,
-                        chat_identity,
-                    )
+                        )
 
                     async with event.client.action(event.chat_id, "typing"):
                         chat_result = await chatter.invoke(
@@ -464,13 +459,6 @@ async def start():
                         )
 
                     return "REJECTED"
-
-                classifier = Classifier(
-                    llmclient,
-                    LLM_CLASSIFIER_MODEL,
-                    bot_identity,
-                    chat_identity,
-                )
 
                 classification_result = await classifier.invoke(
                     common_prompts,
