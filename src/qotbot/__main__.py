@@ -27,7 +27,6 @@ from qotbot.llm.chatter import Chatter
 from qotbot.llm.classifier import Classifier
 from qotbot.llm.summariser import Summariser
 from qotbot.tools.telegram import TelegramProvider
-from qotbot.tools.wolfram_alpha import wolfram_alpha
 from qotbot.tools.lolcryption import lolcryption
 from qotbot.tools.web_tools import web_tools
 from qotbot.tools.date_tools import date_tool
@@ -406,7 +405,6 @@ async def start():
                 classifier = Classifier(llmclient,LLM_CLASSIFIER_MODEL,bot_identity,chat_identity)
 
                 chat_tools = FastMCP("tools", providers=[TelegramProvider(event, DATABASE_PATH)])
-                chat_tools.mount(wolfram_alpha)
                 chat_tools.mount(web_tools)
                 chat_tools.mount(lolcryption)
                 chat_tools.mount(date_tool)

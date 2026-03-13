@@ -4,6 +4,8 @@ from fastmcp import FastMCP
 
 web_tools = FastMCP("Web Search")
 
+WEB_TIMEOUT = int(os.getenv("WEB_TIMEOUT", "20"))
+
 
 @web_tools.tool
 async def get_weather(city: str) -> str:
@@ -18,14 +20,14 @@ async def get_weather(city: str) -> str:
     """
 
     api_url = f"https://wttr.in/{city}?format=4"
-    timeout = aiohttp.ClientTimeout(total=10)
+    timeout = aiohttp.ClientTimeout(total=WEB_TIMEOUT)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(api_url) as resp:
                 resp.raise_for_status()
                 return await resp.text()
     except aiohttp.ClientResponseError as e:
-        return f"Error from weather API: {e.message}"
+        return f"Error from weather API: {str(e)}"
     except Exception as e:
         return f"Failed to get weather: {str(e)}"
 
@@ -51,7 +53,7 @@ async def search_web(query: str, max_results: int = 5) -> str:
     headers = {"Authorization": f"Bearer {api_key}"}
     payload = {"query": query, "max_results": min(max_results, 10)}
 
-    timeout = aiohttp.ClientTimeout(total=15)
+    timeout = aiohttp.ClientTimeout(total=WEB_TIMEOUT)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(api_url, json=payload, headers=headers) as resp:
@@ -68,9 +70,39 @@ async def search_web(query: str, max_results: int = 5) -> str:
                 else:
                     return "No results found."
     except aiohttp.ClientResponseError as e:
-        return f"Error from web search: {e.message}"
+        return f"Error from web search: {str(e)}"
     except Exception as e:
         return f"Failed to search web: {str(e)}"
+
+
+@web_tools.tool
+async def wolfram_alpha_query(query: str) -> str:
+    """
+    Query Wolfram Alpha and return the plaintext result.
+
+    Args:
+        query: A natural language or structured query for Wolfram Alpha.
+
+    Returns:
+        A string with the result, or an error message if no result is found.
+    """
+    appid = os.environ.get("WOLFRAM_APPID")
+    if not appid:
+        return "Error: WOLFRAM_APPID not set. Please set this environment variable."
+
+    endpoint = "https://www.wolframalpha.com/api/v1/llm-api"
+    params = {"input": query, "appid": appid}
+
+    timeout = aiohttp.ClientTimeout(total=WEB_TIMEOUT)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(endpoint, params=params) as resp:
+                resp.raise_for_status()
+                return await resp.text()
+    except aiohttp.ClientResponseError as e:
+        return f"Error from Wolfram Alpha: {str(e)}"
+    except Exception as e:
+        return f"Failed to query Wolfram Alpha: {str(e)}"
 
 
 if __name__ == "__main__":

@@ -6,8 +6,8 @@ A Telegram bot with LLM integration for chat interactions, transcription, and mo
 
 - **Chat Integration**: Responds to messages in Telegram chats using LLM
 - **Voice Transcription**: Transcribes voice messages using Whisper
-- **Commands**: `/bye`, `/enable`, `/disable`, `/transcript`, `/summary`
-- **Tools**: Wolfram Alpha, web search, encryption/decryption utilities
+- **Commands**: `/bye`, `/enable`, `/disable`, `/transcript`, `/classification`, `/summary`
+- **Tools**: Wolfram Alpha, web search, weather, LOLcryption, date/time tools, Telegram messaging tools
 - **Database**: Stores messages and chat history in SQLite
 
 ## Requirements
@@ -38,8 +38,14 @@ Required variables:
 - `TELEGRAM_API_ID` - Your Telegram API ID
 - `TELEGRAM_API_HASH` - Your Telegram API hash
 - `TELEGRAM_BOT_TOKEN` - Your Telegram bot token
+- `TELEGRAM_BOT_OWNER` - Telegram user ID of the bot owner
 - `LLM_API_URL` - LLM API endpoint (default: `http://localhost:11434`)
 - `LLM_API_KEY` - LLM API key
+- `LLM_CHAT_MODEL` - LLM model for chat (default: `qwen3.5:4b`)
+- `LLM_CLASSIFIER_MODEL` - LLM model for classification (default: `qwen3.5:4b`)
+
+Optional variables:
+- `WEB_TIMEOUT` - HTTP request timeout in seconds (default: `20`)
 
 ### 3. Install dependencies
 
@@ -76,9 +82,9 @@ src/qotbot/
 │   └── summariser.py    # Chat summarisation
 ├── tools/               # MCP tools
 │   ├── telegram.py      # Telegram provider
-│   ├── wolfram_alpha.py # Wolfram Alpha
-│   ├── web_search.py    # Web search
-│   └── lolcryption.py   # Encryption utilities
+│   ├── web_tools.py     # Web search & weather
+│   ├── lolcryption.py   # Encryption utilities
+│   └── date_tools.py    # Date/time utilities
 ├── utils/               # Utilities
 │   ├── whisper.py       # Whisper transcription
 │   └── media.py         # Media handling
