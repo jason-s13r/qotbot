@@ -1,7 +1,6 @@
 from datetime import datetime
 from sqlalchemy import (
     Column,
-    Integer,
     String,
     BigInteger,
     DateTime,
@@ -26,10 +25,20 @@ class Message(Base):
     reply_to_message_id = Column(BigInteger, nullable=True)
     media_file_id = Column(String, nullable=True)
     media_type = Column(String, nullable=True)
+    has_image = Column(Boolean, default=False)
+    has_audio = Column(Boolean, default=False)
     image_description = Column(Text, nullable=True)
     audio_transcription = Column(Text, nullable=True)
     classification_reason = Column(Text, nullable=True)
+    is_approved = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    processed = Column(Boolean, default=False)
+    audio_transcribed = Column(Boolean, default=False)
+    image_transcribed = Column(Boolean, default=False)
+    classified = Column(Boolean, default=False)
+    responded = Column(Boolean, default=False)
+    skip_reason = Column(Text, nullable=True)
+    queue_status = Column(String, nullable=True)
 
     __table_args__ = (PrimaryKeyConstraint("chat_id", "id"),)
 

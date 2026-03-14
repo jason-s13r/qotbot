@@ -1,265 +1,481 @@
 import logging
-from telethon import events
-from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from telethon import events
+from telethon.tl.custom import Message
 
-from qotbot.database.models.user import User
-from qotbot.database.models.chat import Chat, ChatMember
+from sqlalchemy.orm import selectinload
+
+from qotbot.database.models.chat import Chat
 from qotbot.database.models.message import Message
-from qotbot.database.models.summary import DailySummary
-
+from qotbot.database.models.user import User
 
 logger = logging.getLogger(__name__)
 
 
-def _create_or_update_user(session, sender, sender_id):
-    user = session.get(User, sender_id)
-    if not user:
-        from telethon.tl.types import User as TelegramUser
+async def store_message_from_event(
+    session: AsyncSession, event: events.NewMessage.Event
+) -> Message:
+    """
+    Store a message from a Telegram event into the database.
+    Creates a new Message record with processed=False and queue_status='pending'.
 
-        if isinstance(sender, TelegramUser):
-            user = User(
-                id=sender_id,
-                username=sender.username if sender else None,
-                first_name=sender.first_name if sender else None,
-                last_name=sender.last_name if sender else None,
-                is_bot=sender.bot if sender else False,
-            )
-        else:
-            user = User(
-                id=sender_id,
-                username=None,
-                first_name=None,
-                last_name=None,
-                is_bot=False,
-            )
-        session.add(user)
-        logger.info(f"Created user {sender_id}")
-    return user
+    Args:
+        session: Async database session
+        event: Telegram NewMessage event
 
+    Returns:
+        The created Message object
+    """
+    chat_id = event.chat_id
+    message_id = event.message.id
+    sender_id = event.sender_id
 
-def _create_or_update_chat(session, event):
-    chat = session.get(Chat, event.chat_id)
-    if not chat:
-        chat_type = (
-            "private" if event.is_private else "group" if event.is_group else "channel"
-        )
-        chat = Chat(
-            id=event.chat_id,
-            title=getattr(event.chat, "title", None),
-            chat_type=chat_type,
-            username=getattr(event.chat, "username", None),
-        )
-        session.add(chat)
-        logger.info(f"Created chat {event.chat_id}")
-    return chat
-
-
-def _ensure_chat_member(session, user, chat):
-    chat_member = (
-        session.query(ChatMember).filter_by(user_id=user.id, chat_id=chat.id).first()
-    )
-    if not chat_member:
-        chat_member = ChatMember(user_id=user.id, chat_id=chat.id)
-        session.add(chat_member)
-    return chat_member
-
-
-def _create_message_from_event(session, event):
-    media = event.message.media
-    media_file_id = None
-    media_type = None
-
-    if media:
-        media_type = type(media).__name__.lower()
-        if hasattr(media, "photo") and media.photo:
-            media_file_id = str(media.photo.id)
-        elif hasattr(media, "document") and media.document:
-            media_file_id = str(media.document.id)
+    has_image = event.photo is not None or event.sticker is not None
+    has_audio = event.audio is not None or event.voice is not None
 
     message = Message(
-        id=event.message.id,
-        chat_id=event.chat_id,
-        sender_id=event.sender_id,
+        id=message_id,
+        chat_id=chat_id,
+        sender_id=sender_id,
         text=event.raw_text,
         message_date=event.message.date,
-        is_reply=event.message.is_reply,
-        reply_to_message_id=event.message.reply_to.reply_to_msg_id
-        if event.message.is_reply
-        else None,
-        media_file_id=media_file_id,
-        media_type=media_type if media else None,
-        image_description=None,
+        is_reply=event.message.reply_to is not None,
+        reply_to_message_id=(
+            event.message.reply_to.reply_to_msg_id if event.message.reply_to else None
+        ),
+        media_file_id=None,
+        has_image=has_image,
+        has_audio=has_audio,
+        processed=False,
+        audio_transcribed=False,
+        image_transcribed=False,
+        classified=False,
+        responded=False,
+        is_approved=False,
+        queue_status="pending",
     )
+
     session.add(message)
+    logger.info(f"Stored message {message_id} in chat {chat_id}")
     return message
 
 
-def _create_message(session, message):
-    media = message.media
-    media_file_id = None
-    media_type = None
+async def store_sent_message(session: AsyncSession, message, chat_id: int):
+    """
+    Store a message that was sent by the bot.
 
-    if media:
-        media_type = type(media).__name__.lower()
-        if hasattr(media, "photo") and media.photo:
-            media_file_id = str(media.photo.id)
-        elif hasattr(media, "document") and media.document:
-            media_file_id = str(media.document.id)
+    Args:
+        session: Async database session
+        message: Telegram message object from send_message
+        chat_id: The chat ID
 
-    entity = Message(
-        id=message.id,
-        chat_id=message.chat_id,
-        sender_id=message.sender_id,
+    Returns:
+        The created Message object
+    """
+    message_id = message.id
+    sender_id = message.sender_id
+
+    db_message = Message(
+        id=message_id,
+        chat_id=chat_id,
+        sender_id=sender_id,
         text=message.raw_text,
         message_date=message.date,
-        is_reply=message.is_reply,
-        reply_to_message_id=message.reply_to.reply_to_msg_id
-        if message.is_reply
-        else None,
-        media_file_id=media_file_id,
-        media_type=media_type if media else None,
-        image_description=None,
+        is_reply=message.reply_to is not None,
+        reply_to_message_id=(
+            message.reply_to.reply_to_msg_id if message.reply_to else None
+        ),
+        media_file_id=None,
+        processed=True,
+        audio_transcribed=False,
+        image_transcribed=False,
+        classified=False,
+        responded=True,
+        queue_status="complete",
     )
-    session.add(entity)
-    return entity
+
+    session.add(db_message)
+    logger.info(f"Stored sent message {message_id} in chat {chat_id}")
+    return db_message
 
 
-async def store_message_from_event(
-    session: Session, event: events.NewMessage.Event
-) -> None:
-    logging.info(f"Storing message {event.message.id} from chat {event.chat_id}")
-
-    sender = await event.get_sender()
-
-    user = _create_or_update_user(session, sender, event.sender_id)
-    chat = _create_or_update_chat(session, event)
-    _create_message_from_event(session, event)
-
-    logging.info(f"Message {event.message.id} stored successfully")
-
-
-async def store_message(session: Session, message):
-    logging.info(f"Storing message {message.id} from chat {message.chat_id}")
-    _create_message(session, message)
-    logging.info(f"Message {message.id} stored successfully")
-
-
-def get_recent_messages(
-    session: Session, chat_id: int, limit: int = 50
+async def get_recent_messages(
+    session: AsyncSession, chat_id: int, limit: int = 50, exclude_ids: list[int] = []
 ) -> list[Message]:
-    logging.info(f"Retrieving last {limit} messages for chat {chat_id}")
+    """
+    Get recent messages from a chat, ordered by message_date descending.
+    Eagerly loads sender relationship to avoid lazy loading issues.
 
-    results = (
-        session.query(Message)
-        .filter(Message.chat_id == chat_id)
+    Args:
+        session: Async database session
+        chat_id: The chat ID to query
+        limit: Number of messages to retrieve
+
+    Returns:
+        List of Message objects
+    """
+    result = await session.execute(
+        select(Message)
+        .filter(
+            Message.chat_id == chat_id,
+            Message.id.not_in(exclude_ids),
+        )
+        .options(selectinload(Message.sender))
         .order_by(Message.message_date.desc())
         .limit(limit)
-        .all()
     )
+    messages = result.scalars().all()
+    return list(reversed(messages))
 
-    logging.info(f"Retrieved {len(results)} messages for chat {chat_id}")
 
-    return list(reversed(results))
+async def get_chat_summary(session: AsyncSession, chat_id: int) -> str:
+    """
+    Get the overall summary for a chat.
+
+    Args:
+        session: Async database session
+        chat_id: The chat ID to query
+
+    Returns:
+        The chat's overall_summary string or empty string
+    """
+    chat = await session.get(Chat, chat_id)
+    return chat.overall_summary or "" if chat else ""
+
+
+async def get_chat_overall_summary(session: AsyncSession, chat_id: int) -> str:
+    """
+    Alias for get_chat_summary.
+
+    Args:
+        session: Async database session
+        chat_id: The chat ID to query
+
+    Returns:
+        The chat's overall_summary string or empty string
+    """
+    return await get_chat_summary(session, chat_id)
 
 
 def get_sender_name(user: User | None) -> str:
-    if user is None:
-        return "Unknown User"
+    """
+    Get a human-readable name for a user.
 
+    Args:
+        user: User object or None
+
+    Returns:
+        Display name string
+    """
+    if not user:
+        return "Unknown"
     if user.first_name and user.last_name:
         return f"{user.first_name} {user.last_name}"
-
     if user.first_name:
         return user.first_name
-
     if user.username:
-        return f"@{user.username}"
-
+        return user.username
     return f"User {user.id}"
 
 
-def get_chat_summary(session: Session, chat_id: int) -> DailySummary | None:
-    logging.info(f"Retrieving latest summary for chat {chat_id}")
+async def store_image_description(
+    session: AsyncSession, message_id: int, chat_id: int, description: str
+):
+    """
+    Store an image description for a message.
+    Sets image_transcribed=True and queue_status='classifying'.
 
-    summary = (
-        session.query(DailySummary)
-        .filter(DailySummary.chat_id == chat_id)
-        .order_by(DailySummary.summary_date.desc())
-        .first()
-    )
-
-    if summary:
-        logging.info(f"Found summary from {summary.summary_date}")
-    else:
-        logging.info(f"No summary found for chat {chat_id}")
-
-    return summary
-
-
-def get_chat_overall_summary(session: Session, chat_id: int) -> str | None:
-    logging.info(f"Retrieving overall summary for chat {chat_id}")
-
-    chat = session.get(Chat, chat_id)
-
-    if chat:
-        logging.info(f"Found overall summary for chat {chat_id}")
-        return chat.overall_summary
-    else:
-        logging.info(f"Chat {chat_id} not found")
-        return None
-
-
-def get_chat(session: Session, chat_id: int) -> Chat | None:
-    logging.info(f"Retrieving chat {chat_id}")
-    chat = session.get(Chat, chat_id)
-    if chat:
-        logging.info(f"Found chat {chat_id}")
-    else:
-        logging.info(f"Chat {chat_id} not found")
-    return chat
-
-
-def store_image_description(
-    session: Session, message_id: int, chat_id: int, description: str
-) -> None:
-    logging.info(
-        f"Storing image description for message {message_id} in chat {chat_id}"
-    )
-    message = session.get(Message, (chat_id, message_id))
+    Args:
+        session: Async database session
+        message_id: The message ID
+        chat_id: The chat ID
+        description: The image description text
+    """
+    message = await session.get(Message, (chat_id, message_id))
     if message:
         message.image_description = description
-        logging.info(f"Image description stored for message {message_id}")
+        message.image_transcribed = True
+        message.queue_status = "classifying"
+        logger.info(f"Stored image description for message {message_id}")
     else:
-        logging.warning(
-            f"Message {message_id} not found, cannot store image description"
+        logger.warning(f"Message {message_id} not found for image description")
+
+
+async def get_messages_ready_for_response(
+    session: AsyncSession, limit: int = 3
+) -> list[Message]:
+    """
+    Get messages that are approved and ready for response generation.
+    Filters for messages within last 30 minutes that:
+    - have not been responded to
+    - have been approved for response
+    - either have no image or have image description
+    - either have no audio or have audio transcription
+
+    Args:
+        session: Async database session
+        limit: Maximum number of messages to retrieve
+
+    Returns:
+        List of Message objects ready for response
+    """
+    from datetime import datetime, timedelta
+
+    thirty_min_ago = datetime.utcnow() - timedelta(minutes=30)
+
+    result = await session.execute(
+        select(Message)
+        .filter(
+            Message.responded == False,
+            Message.is_approved == True,
+            Message.message_date >= thirty_min_ago,
         )
-
-def store_message_classification(session: Session, message_id: int, chat_id: int, classification: str) -> None:
-    logging.info(
-        f"Storing classification reason for message {message_id} in chat {chat_id}"
-    )
-    message = session.get(Message, (chat_id, message_id))
-    if message:
-        message.classification_reason = classification
-        logging.info(f"Classification stored for message {message_id}")
-    else:
-        logging.warning(
-            f"Message {message_id} not found, cannot store classification"
+        .filter(
+            (Message.has_image == False) | (Message.image_transcribed == True),
+            (Message.has_audio == False) | (Message.audio_transcribed == True),
         )
-
-
-def store_audio_transcription(
-    session: Session, message_id: int, chat_id: int, transcription: str
-) -> None:
-    logging.info(
-        f"Storing audio transcription for message {message_id} in chat {chat_id}"
+        .order_by(Message.message_date.asc())
+        .limit(limit)
     )
-    message = session.get(Message, (chat_id, message_id))
+    return result.scalars().all()
+
+
+async def store_audio_transcription(
+    session: AsyncSession, message_id: int, chat_id: int, transcription: str
+):
+    """
+    Store an audio transcription for a message.
+    Sets audio_transcribed=True and queue_status='classifying'.
+
+    Args:
+        session: Async database session
+        message_id: The message ID
+        chat_id: The chat ID
+        transcription: The transcribed text
+    """
+    message = await session.get(Message, (chat_id, message_id))
     if message:
         message.audio_transcription = transcription
-        logging.info(f"Audio transcription stored for message {message_id}")
+        message.audio_transcribed = True
+        message.queue_status = "classifying"
+        logger.info(f"Stored audio transcription for message {message_id}")
     else:
-        logging.warning(
-            f"Message {message_id} not found, cannot store audio transcription"
+        logger.warning(f"Message {message_id} not found for audio transcription")
+
+
+async def store_message_classification(
+    session: AsyncSession, message_id: int, chat_id: int, reason: str, is_approved: bool
+):
+    """
+    Store a classification reason for a message.
+    Sets classified=True and updates queue_status based on approval.
+
+    Args:
+        session: Async database session
+        message_id: The message ID
+        chat_id: The chat ID
+        reason: The classification reason
+        is_approved: Whether the message is approved
+    """
+    message = await session.get(Message, (chat_id, message_id))
+    if message:
+        message.classification_reason = reason
+        message.classified = True
+        message.is_approved = is_approved
+        message.queue_status = "responding" if is_approved else "skipped"
+        logger.info(f"Stored classification for message {message_id}: {reason[:50]}...")
+    else:
+        logger.warning(f"Message {message_id} not found for classification")
+
+
+async def get_unprocessed_messages(
+    session: AsyncSession, limit: int = 100
+) -> list[Message]:
+    """
+    Get messages that are pending processing, ordered by age.
+
+    Args:
+        session: Async database session
+        limit: Maximum number of messages to retrieve
+
+    Returns:
+        List of Message objects with processed=False
+    """
+    result = await session.execute(
+        select(Message)
+        .filter(Message.processed == False)
+        .order_by(Message.message_date.asc())
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+
+async def get_message_age_minutes(
+    session: AsyncSession, chat_id: int, message_id: int
+) -> float:
+    """
+    Calculate the age of a message in minutes.
+
+    Args:
+        session: Async database session
+        chat_id: The chat ID
+        message_id: The message ID
+
+    Returns:
+        Age in minutes as float, or None if message not found
+    """
+    message = await session.get(Message, (chat_id, message_id))
+    if not message:
+        return None
+
+    now = datetime.utcnow()
+    age = now - message.message_date
+    return age.total_seconds() / 60
+
+
+async def get_pending_audio_messages(
+    session: AsyncSession, limit: int = 50
+) -> list[Message]:
+    """
+    Get messages with audio that need transcription.
+
+    Args:
+        session: Async database session
+        limit: Maximum number of messages to retrieve
+
+    Returns:
+        List of Message objects with audio and audio_transcribed=False
+    """
+    result = await session.execute(
+        select(Message)
+        .filter(
+            Message.audio_transcribed == False,
+            Message.has_audio == True,
         )
+        .order_by(Message.message_date.asc())
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+
+async def get_pending_image_messages(
+    session: AsyncSession, limit: int = 50
+) -> list[Message]:
+    """
+    Get messages with images that need description.
+
+    Args:
+        session: Async database session
+        limit: Maximum number of messages to retrieve
+
+    Returns:
+        List of Message objects with image and image_transcribed=False
+    """
+    result = await session.execute(
+        select(Message)
+        .filter(
+            Message.image_transcribed == False,
+            Message.has_image == True,
+        )
+        .order_by(Message.message_date.asc())
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+
+async def get_pending_classification_messages(
+    session: AsyncSession, limit: int = 50
+) -> list[Message]:
+    """
+    Get messages that are ready for classification.
+
+    Args:
+        session: Async database session
+        limit: Maximum number of messages to retrieve
+
+    Returns:
+        List of Message objects ready for classification
+    """
+    result = await session.execute(
+        select(Message)
+        .filter(
+            Message.classified == False,
+            Message.queue_status == "classifying",
+        )
+        .order_by(Message.message_date.asc())
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+
+async def get_pending_response_messages(
+    session: AsyncSession, limit: int = 50
+) -> list[Message]:
+    """
+    Get messages that are approved and ready for response generation.
+
+    Args:
+        session: Async database session
+        limit: Maximum number of messages to retrieve
+
+    Returns:
+        List of Message objects ready for response
+    """
+    result = await session.execute(
+        select(Message)
+        .filter(
+            Message.responded == False,
+            Message.queue_status == "responding",
+        )
+        .order_by(Message.message_date.asc())
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+
+async def mark_message_skipped(
+    session: AsyncSession,
+    chat_id: int,
+    message_id: int,
+    reason: str,
+):
+    """
+    Mark a message as skipped with a reason.
+
+    Args:
+        session: Async database session
+        chat_id: The chat ID
+        message_id: The message ID
+        reason: The skip reason
+    """
+    message = await session.get(Message, (chat_id, message_id))
+    if message:
+        message.skip_reason = reason
+        message.queue_status = "skipped"
+        logger.info(f"Marked message {message_id} as skipped: {reason}")
+    else:
+        logger.warning(f"Message {message_id} not found for skip marking")
+
+
+async def mark_message_responded(
+    session: AsyncSession,
+    chat_id: int,
+    message_id: int,
+):
+    """
+    Mark a message as responded.
+
+    Args:
+        session: Async database session
+        chat_id: The chat ID
+        message_id: The message ID
+    """
+    message = await session.get(Message, (chat_id, message_id))
+    if message:
+        message.responded = True
+        message.queue_status = "complete"
+        logger.info(f"Marked message {message_id} as responded")
+    else:
+        logger.warning(f"Message {message_id} not found for response marking")

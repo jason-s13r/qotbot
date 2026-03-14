@@ -1,47 +1,45 @@
+import asyncio
 import logging
 import random
 from collections.abc import Sequence
 from typing import Any
+from fastmcp import FastMCP
 from fastmcp.server.providers import Provider
 from fastmcp.tools import Tool
-from telethon import events
+from telethon import TelegramClient
 from telethon.tl.types import InputMediaPoll, Poll, PollAnswer, TextWithEntities
 
 from qotbot.database.database import get_session
-from qotbot.database.messages import store_message
+from qotbot.database.messages import store_sent_message
 
 logger = logging.getLogger(__name__)
 
 
 class TelegramProvider(Provider):
-    """Provides resources and tools related to a telegram event."""
+    """Provides resources and tools related to a telegram chat."""
 
-    def __init__(self, event: events.NewMessage.Event, DATABASE_PATH: str):
+    def __init__(
+        self, client: TelegramClient, chat_id: int, DATABASE_PATH: str
+    ):
         super().__init__()
-        self.event = event
+        self.client = client
+        self.chat_id = chat_id
         self.database_path = DATABASE_PATH
 
-    async def _store_message(self, message):
-        with get_session(self.database_path) as session:
-            await store_message(session, message)
+    async def _store_sent_message(self, message):
+        """Store a message that was sent by the bot (not from an event)."""
+        async with get_session(self.database_path) as session:
+            await store_sent_message(session, message, self.chat_id)
 
     async def _list_tools(self) -> Sequence[Tool]:
         return [
             Tool.from_function(
-                self._get_sender_id,
-                name="get_sender_id",
-                description="Get the sender_id.",
-            ),
-            Tool.from_function(
                 self._get_chat_id, name="get_chat_id", description="Get the chat_id."
             ),
             Tool.from_function(
-                self._respond,
-                name="respond",
-                description="Send a response in the chat.",
-            ),
-            Tool.from_function(
-                self._reply, name="reply", description="Send a reply in the chat."
+                self._send_reply,
+                name="send_reply",
+                description="Send a reply in the chat.",
             ),
             Tool.from_function(
                 self._send_message,
@@ -60,24 +58,15 @@ class TelegramProvider(Provider):
             ),
         ]
 
-    async def _get_sender_id(self) -> int | Any | None:
-        return self.event.sender_id
-
     async def _get_chat_id(self) -> int | Any | None:
-        return self.event.chat_id
+        return self.chat_id
 
-    async def _respond(self, message: str):
-        event = self.event
-        async with event.client.action(event.chat_id, "typing"):
-            response = await event.respond(message)
-            await self._store_message(response)
-            return "Message sent"
-
-    async def _reply(self, message: str):
-        event = self.event
-        async with event.client.action(event.chat_id, "typing"):
-            reply = await event.reply(message)
-            await self._store_message(reply)
+    async def _send_reply(self, message_id: int, message: str):
+        async with self.client.action(self.chat_id, "typing"):
+            reply = await self.client.send_message(
+                self.chat_id, message, reply_to=message_id
+            )
+            await self._store_sent_message(reply)
             return "Reply sent"
 
     async def _send_message(self, text: str):
@@ -90,9 +79,11 @@ class TelegramProvider(Provider):
             "Message sent" on success
         """
         try:
-            async with self.event.client.action(self.event.chat_id, "typing"):
-                response = await self.event.respond(text, parse_mode="markdown")
-                await self._store_message(response)
+            async with self.client.action(self.chat_id, "typing"):
+                response = await self.client.send_message(
+                    self.chat_id, text, parse_mode="markdown"
+                )
+                await self._store_sent_message(response)
                 return "Message sent"
         except Exception as e:
             logger.error(f"Error sending message: {e}")
@@ -109,9 +100,12 @@ class TelegramProvider(Provider):
         """
         for text in messages:
             try:
-                async with self.event.client.action(self.event.chat_id, "typing"):
-                    response = await self.event.respond(text, parse_mode="markdown")
-                    await self._store_message(response)
+                async with self.client.action(self.chat_id, "typing"):
+                    await asyncio.sleep(0.1)
+                    response = await self.client.send_message(
+                        self.chat_id, text, parse_mode="markdown"
+                    )
+                    await self._store_sent_message(response)
             except Exception as e:
                 logger.error(f"Error sending message: {e}")
         return f"{len(messages)} messages sent"
@@ -120,6 +114,8 @@ class TelegramProvider(Provider):
         self,
         question: str,
         options: list[str],
+        public_voters: bool = True,
+        is_quiz: bool = False,
         multiple_choice: bool = False,
     ):
         """Send a poll to the Telegram chat.
@@ -143,15 +139,15 @@ class TelegramProvider(Provider):
                 id=random.randint(1000, 10000),
                 question=TextWithEntities(question, []),
                 answers=answers,
-                public_voters=True,
-                quiz=False,
+                public_voters=public_voters,
+                quiz=is_quiz,
                 multiple_choice=multiple_choice,
             )
-            async with self.event.client.action(self.event.chat_id, "typing"):
-                response = await self.event.client.send_message(
-                    self.event.chat_id, file=InputMediaPoll(poll=poll)
+            async with self.client.action(self.chat_id, "typing"):
+                response = await self.client.send_message(
+                    self.chat_id, file=InputMediaPoll(poll=poll)
                 )
-                await self._store_message(response)
+                await self._store_sent_message(response)
                 return "Poll sent"
         except Exception as e:
             logger.error(f"Error sending poll: {e}")

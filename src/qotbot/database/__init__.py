@@ -12,8 +12,11 @@ from qotbot.database.messages import (
     store_audio_transcription,
     store_message_classification,
 )
-from qotbot.database.users import create_or_update_bot_user
-from qotbot.database.chats import set_chat_can_respond
+from qotbot.database.users import (
+    create_or_update_bot_user,
+    create_or_update_user_from_event,
+)
+from qotbot.database.chats import set_chat_can_respond, create_or_update_chat_from_event
 from qotbot.database.models.summary import DailySummary
 
 __all__ = [
@@ -34,5 +37,7 @@ __all__ = [
     "store_audio_transcription",
     "store_message_classification",
     "create_or_update_bot_user",
+    "create_or_update_user_from_event",
     "set_chat_can_respond",
+    "create_or_update_chat_from_event",
 ]
