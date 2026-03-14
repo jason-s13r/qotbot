@@ -205,7 +205,7 @@ async def start():
                         prior_summary = chat.overall_summary
                         chat_identity = f"{chat.title} ({chat.id})"
                         messages = await get_recent_messages(
-                            session, event.chat_id, limit=1000, bot_id=bot_user.id
+                            session, event.chat_id, limit=1000
                         )
                         logger.info(
                             f"Retrieved {len(messages)} messages for summary generation"
