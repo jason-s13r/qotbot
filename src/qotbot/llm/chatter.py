@@ -2,6 +2,7 @@ from string import Template
 from openai import AsyncOpenAI
 
 from qotbot.llm.agent import Agent
+from qotbot.utils.config import LLM_CHAT_MODEL
 
 CHAT_SYSTEM_PROMPT = Template(
     """You are an active participant in a group chat with friends.
@@ -82,11 +83,11 @@ Your goal: produce messages that, when sent in Telegram using markdown, display 
 
 class Chatter(Agent):
     def __init__(
-        self, client: AsyncOpenAI, model: str, bot_identity: str, chat_identity: str
+        self, client: AsyncOpenAI, bot_identity: str, chat_identity: str
     ):
         super().__init__(
             client,
-            model,
+            LLM_CHAT_MODEL,
             [
                 {
                     "role": "system",

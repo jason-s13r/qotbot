@@ -1,14 +1,15 @@
 from qotbot.database.database import get_session
 from qotbot.database.messages import store_image_description
 from qotbot.llm.image_describer import ImageDescriber
+from qotbot.utils.config import DATABASE_PATH
 from qotbot.workers.classification_worker import put_classification
 from telethon import TelegramClient
 import logging
 import asyncio
 import time
 
-from qotbot.workers.get_identities import get_identities
-from qotbot.workers.PriorityItem import PriorityItem
+from qotbot.utils.get_identities import get_identities
+from qotbot.workers.models.PriorityItem import PriorityItem
 
 logger = logging.getLogger(__name__)
 
@@ -30,13 +31,7 @@ async def put_image(
     logger.debug(f"Image queued: chat={chat_id}, msg={message_id}")
 
 
-async def image_worker(
-    database_path: str,
-    bot: TelegramClient,
-    llmclient,
-    model: str,
-    bot_name: str,
-):
+async def image_worker(bot: TelegramClient, llmclient):
     logger.info("Image worker started")
     while True:
         try:
@@ -53,12 +48,8 @@ async def image_worker(
         try:
             logger.info(f"Processing image {message_id} in chat {chat_id}")
 
-            bot_identity, chat_identity = await get_identities(
-                bot, chat_id, bot_name, database_path
-            )
-            image_describer = ImageDescriber(
-                llmclient, model, bot_identity, chat_identity
-            )
+            bot_identity, chat_identity = await get_identities(bot, chat_id)
+            image_describer = ImageDescriber(llmclient, bot_identity, chat_identity)
 
             prompts = [
                 {
@@ -78,7 +69,7 @@ async def image_worker(
             if not description:
                 description = "No description generated"
 
-            async with get_session(database_path) as session:
+            async with get_session(DATABASE_PATH) as session:
                 await store_image_description(session, message_id, chat_id, description)
                 await session.commit()
 

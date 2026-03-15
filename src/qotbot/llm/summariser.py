@@ -2,12 +2,14 @@ from string import Template
 
 from openai import AsyncOpenAI
 from qotbot.llm.agent import Agent
+from qotbot.utils.config import LLM_SUMMARY_MODEL
 
 SUMMARISER_PROMPT = Template("""You are to summarise the transcript of a group chat conversation for the client Participant.
+
 - The client Participant is named $bot_identity.
 - The current chat is $chat_identity.
 - A prior summary of the conversation may be provided in <summary>.
-                             
+
 Consider:
 - Start with a two paragraphs for a high-level summary of the entire chat, max 100 words. Followed by a separator line of four dashes.
 - Then, provide a more comprehensive summary of the entire conversation.
@@ -15,18 +17,14 @@ Consider:
 - Focus on the most important information and main topics discussed.
 - Exclude irrelevant details and side conversations.
 - Identify chat lore, injokes, recurring themes, and important context that may not be explicitly stated.
-- List the main participants in the conversation and their apparent roles and relationships.
-
-""")
+- List the main participants in the conversation and their apparent roles and relationships.""")
 
 
 class Summariser(Agent):
-    def __init__(
-        self, client: AsyncOpenAI, model: str, bot_identity: str, chat_identity: str
-    ):
+    def __init__(self, client: AsyncOpenAI, bot_identity: str, chat_identity: str):
         super().__init__(
             client,
-            model,
+            LLM_SUMMARY_MODEL,
             [
                 {
                     "role": "system",

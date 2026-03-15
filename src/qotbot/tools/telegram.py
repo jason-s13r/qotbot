@@ -11,6 +11,7 @@ from telethon.tl.types import InputMediaPoll, Poll, PollAnswer, TextWithEntities
 
 from qotbot.database.database import get_session
 from qotbot.database.messages import store_sent_message
+from qotbot.utils.config import DATABASE_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -18,17 +19,14 @@ logger = logging.getLogger(__name__)
 class TelegramProvider(Provider):
     """Provides resources and tools related to a telegram chat."""
 
-    def __init__(
-        self, client: TelegramClient, chat_id: int, DATABASE_PATH: str
-    ):
+    def __init__(self, client: TelegramClient, chat_id: int):
         super().__init__()
         self.client = client
         self.chat_id = chat_id
-        self.database_path = DATABASE_PATH
 
     async def _store_sent_message(self, message):
         """Store a message that was sent by the bot (not from an event)."""
-        async with get_session(self.database_path) as session:
+        async with get_session(DATABASE_PATH) as session:
             await store_sent_message(session, message, self.chat_id)
 
     async def _list_tools(self) -> Sequence[Tool]:

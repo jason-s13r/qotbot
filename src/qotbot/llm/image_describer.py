@@ -2,6 +2,7 @@ from string import Template
 from openai import AsyncOpenAI
 
 from qotbot.llm.agent import Agent
+from qotbot.utils.config import LLM_VISION_MODEL
 
 IMAGE_DESCRIBER_PROMPT = Template("""You are an image describer for a group chat.
 Your task is to provide clear, concise descriptions of images, stickers, and other visual media.
@@ -25,11 +26,11 @@ Do not:
 
 class ImageDescriber(Agent):
     def __init__(
-        self, client: AsyncOpenAI, model: str, bot_identity: str, chat_identity: str
+        self, client: AsyncOpenAI, bot_identity: str, chat_identity: str
     ):
         super().__init__(
             client,
-            model,
+            LLM_VISION_MODEL,
             [
                 {
                     "role": "system",

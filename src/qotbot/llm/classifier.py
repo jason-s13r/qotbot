@@ -2,6 +2,7 @@ from string import Template
 from openai import AsyncOpenAI
 
 from qotbot.llm.agent import Agent
+from qotbot.utils.config import LLM_CLASSIFIER_MODEL
 
 CLASSIFIER_PROMPT = Template("""You are a relevance classifier for a group chat Participant.
 Determine if the Participant should respond to the recent messages.
@@ -41,11 +42,11 @@ AUDIO ANALYSIS:
 
 class Classifier(Agent):
     def __init__(
-        self, client: AsyncOpenAI, model: str, bot_identity: str, chat_identity: str
+        self, client: AsyncOpenAI, bot_identity: str, chat_identity: str
     ):
         super().__init__(
             client,
-            model,
+            LLM_CLASSIFIER_MODEL,
             [
                 {
                     "role": "system",

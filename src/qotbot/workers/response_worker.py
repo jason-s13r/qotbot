@@ -1,6 +1,5 @@
-import os
-
 from qotbot.database.database import get_session
+from qotbot.utils.config import DATABASE_PATH, MAX_BATCH_SIZE
 from qotbot.database.messages import mark_message_responded
 from qotbot.database.models.chat import Chat
 from qotbot.database.models.message import Message
@@ -9,8 +8,8 @@ from qotbot.tools.date_tools import date_tool
 from qotbot.tools.lolcryption import lolcryption
 from qotbot.tools.telegram import TelegramProvider
 from qotbot.tools.web_tools import web_tools
-from qotbot.workers.build_common_prompts import build_common_prompts
-from qotbot.workers.get_identities import get_identities
+from qotbot.utils.build_common_prompts import build_common_prompts
+from qotbot.utils.get_identities import get_identities
 
 from fastmcp import FastMCP
 
@@ -21,13 +20,11 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from qotbot.workers.PriorityItem import PriorityItem
+from qotbot.workers.models.PriorityItem import PriorityItem
 
 logger = logging.getLogger(__name__)
 
 response_queue: asyncio.PriorityQueue[PriorityItem] = asyncio.PriorityQueue()
-
-MAX_BATCH_SIZE = os.getenv("MAX_BATCH_SIZE", 5)
 
 
 async def put_response(
@@ -43,13 +40,7 @@ async def put_response(
     logger.debug(f"Response queued: chat={chat_id}, msg={message_id}")
 
 
-async def response_worker(
-    database_path: str,
-    bot,
-    llmclient,
-    model: str,
-    bot_name: str,
-):
+async def response_worker(bot, llmclient):
     logger.info("Response worker started")
 
     while True:
@@ -65,7 +56,7 @@ async def response_worker(
         message_id = item["message_id"]
 
         try:
-            async with get_session(database_path) as session:
+            async with get_session(DATABASE_PATH) as session:
                 one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
 
                 result = await session.execute(
@@ -97,15 +88,12 @@ async def response_worker(
                     logger.info(f"Chat {chat_id} does not allow responses")
                     continue
 
-            bot_identity, chat_identity = await get_identities(
-                bot, chat_id, bot_name, database_path
-            )
-            chatter = Chatter(llmclient, model, bot_identity, chat_identity)
+            bot_identity, chat_identity = await get_identities(bot, chat_id)
+            chatter = Chatter(llmclient, bot_identity, chat_identity)
 
-            common_prompts = await build_common_prompts(database_path, chat_id, message_ids)
+            common_prompts = await build_common_prompts(chat_id, message_ids)
 
-
-            telegram_provider = TelegramProvider(bot, chat_id, database_path)
+            telegram_provider = TelegramProvider(bot, chat_id)
             chat_tools = FastMCP("tools", providers=[telegram_provider])
             chat_tools.mount(web_tools)
             chat_tools.mount(lolcryption)
@@ -119,7 +107,7 @@ async def response_worker(
                 f"Chatter logs: {chatter_logs[:100] if chatter_logs else 'None'}"
             )
 
-            async with get_session(database_path) as session:
+            async with get_session(DATABASE_PATH) as session:
                 for msg_id in message_ids:
                     await mark_message_responded(session, chat_id, msg_id)
                 await session.commit()

@@ -6,17 +6,17 @@ from fastmcp.tools import Tool
 
 from qotbot.database.database import get_session
 from qotbot.database.messages import mark_message_skipped, store_message_classification
+from qotbot.utils.config import DATABASE_PATH
 from qotbot.workers.response_worker import put_response
 
 logger = logging.getLogger(__name__)
 
 
 class ClassificationProvider(Provider):
-    def __init__(self, message_id: int, chat_id: int, DATABASE_PATH: str):
+    def __init__(self, message_id: int, chat_id: int):
         super().__init__()
         self.chat_id = chat_id
         self.message_id = message_id
-        self.database_path = DATABASE_PATH
 
     async def _list_tools(self) -> Sequence[Tool]:
         return [
@@ -35,7 +35,7 @@ class ClassificationProvider(Provider):
     async def _approve_message(self, reason: str):
         logger.info(f"classification approved: {reason}")
 
-        async with get_session(self.database_path) as session:
+        async with get_session(DATABASE_PATH) as session:
             await store_message_classification(
                 session,
                 self.message_id,
@@ -61,7 +61,7 @@ class ClassificationProvider(Provider):
         logger.info(
             f"Classification rejected for chat={self.chat_id}, msg={self.message_id}: {reason}"
         )
-        async with get_session(self.database_path) as session:
+        async with get_session(DATABASE_PATH) as session:
             await store_message_classification(
                 session,
                 self.message_id,

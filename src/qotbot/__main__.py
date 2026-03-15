@@ -2,7 +2,6 @@ import asyncio
 import logging
 import os
 import tempfile
-from pathlib import Path
 
 from datetime import datetime, timezone
 
@@ -15,7 +14,6 @@ from qotbot.database import (
     get_session,
     store_message_from_event,
     get_recent_messages,
-    get_sender_name,
     create_or_update_bot_user,
     create_or_update_user_from_event,
     set_chat_can_respond,
@@ -24,6 +22,9 @@ from qotbot.database import (
 from qotbot.database.models.chat import Chat
 from qotbot.database.models.message import Message
 from qotbot.llm.summariser import Summariser
+from qotbot.utils.build_common_prompts import format_messages_for_prompt
+from qotbot.utils.config import DATA_PATH, DATABASE_PATH, LOG_PATH, TELEGRAM_BOT_OWNER
+from qotbot.utils.get_identities import get_identities
 from qotbot.utils.media import download_media_base64
 from qotbot.workers.audio_worker import audio_worker, put_audio
 from qotbot.workers.classification_worker import (
@@ -31,11 +32,8 @@ from qotbot.workers.classification_worker import (
     put_classification,
 )
 from qotbot.workers.image_worker import image_worker, put_image
-from qotbot.workers.response_worker import response_worker, put_response
+from qotbot.workers.response_worker import response_worker
 
-
-CLIENT_PROFILE = os.getenv("CLIENT_PROFILE", "bot")
-BOT_NAME = os.getenv("BOT_NAME", "qotbot")
 
 API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
 API_HASH = os.getenv("TELEGRAM_API_HASH", "")
@@ -43,28 +41,15 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
 LLM_API_URL = os.getenv("LLM_API_URL", "http://localhost:11434")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
-LLM_CHAT_MODEL = os.getenv("LLM_CHAT_MODEL", "qwen3.5:4b")
-LLM_CLASSIFIER_MODEL = os.getenv("LLM_CLASSIFIER_MODEL", "qwen3.5:4b")
 
-WHISPER_MODEL = os.getenv("WHISPER_MODEL", "turbo")
-WHISPER_LANGUAGE = os.getenv("WHISPER_LANGUAGE", None)
-
-TELEGRAM_BOT_OWNER = int(os.getenv("TELEGRAM_BOT_OWNER", "0"))
-
-DATA_PATH = Path(os.getenv("DATA_PATH", "./data"))
-PROFILE_DATA = DATA_PATH / CLIENT_PROFILE
-TELEGRAM_PROFILE = PROFILE_DATA / "telegram"
-DATABASE_PATH = PROFILE_DATA / "database.db"
-
-log_file = Path(PROFILE_DATA / "logs" / "log.log")
-log_file.parent.mkdir(parents=True, exist_ok=True)
-
+DATA_PATH.mkdir(parents=True, exist_ok=True)
+LOG_PATH.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s][%(levelname)s][%(name)s:%(lineno)s %(funcName)s()] %(message)s",
     handlers=[
-        logging.handlers.TimedRotatingFileHandler(log_file, when="H", encoding="utf-8"),
+        logging.handlers.TimedRotatingFileHandler(LOG_PATH / "log.log", when="H", encoding="utf-8"),
         logging.StreamHandler(),
     ],
 )
@@ -79,7 +64,7 @@ async def start():
         logger.info("Connecting to Telegram:")
 
         loop = asyncio.get_event_loop()
-        bot = TelegramClient(TELEGRAM_PROFILE, API_ID, API_HASH, loop=loop)
+        bot = TelegramClient(DATA_PATH / "telegram", API_ID, API_HASH, loop=loop)
         llmclient = AsyncOpenAI(base_url=LLM_API_URL, api_key=LLM_API_KEY)
 
         if BOT_TOKEN:
@@ -184,55 +169,34 @@ async def start():
 
             @bot.on(events.NewMessage(pattern=r"(?i)^/summary$"))
             async def handle_summary_event(event: events.NewMessage.Event):
-                async with get_session(DATABASE_PATH) as session:
-                    logger.info(
-                        f"/summary command received from {event.sender_id} in chat {event.chat_id}"
-                    )
-                    bot_user = await bot.get_me()
-                    bot_identity = f"{BOT_NAME} ({bot_user.first_name} {bot_user.last_name}, @{bot_user.username}, user_id: {bot_user.id})"
-                    chat_identity: str = f"(chat_id: {event.chat_id})"
-                    prompts = []
-
-                    async with get_session(DATABASE_PATH) as session:
-                        chat = await session.get(Chat, event.chat_id)
-
-                        if not chat:
-                            logger.warning(
-                                f"Chat {event.chat_id} not found in database"
-                            )
-                            return
-
-                        prior_summary = chat.overall_summary
-                        chat_identity = f"{chat.title} ({chat.id})"
-                        messages = await get_recent_messages(
-                            session, event.chat_id, limit=1000
-                        )
-                        logger.info(
-                            f"Retrieved {len(messages)} messages for summary generation"
-                        )
-
-                        transcript = "\n".join(
-                            [
-                                f"<message sender_id={msg.sender_id} sender_name={get_sender_name(msg.sender)}>"
-                                f"{msg.text}"
-                                f"{f' [Image: {msg.image_description}]' if msg.image_description else ''}"
-                                f"{f' [Audio: {msg.audio_transcription}]' if msg.audio_transcription else ''}"
-                                f"</message>"
-                                for msg in messages
-                            ]
-                        )
-                        logger.info(f"Transcript length: {len(transcript)} characters")
-
-                        prompts = [
-                            {
-                                "role": "user",
-                                "content": f"<summary>\n{prior_summary}\n</summary>\n<transcript>{transcript}</transcript>",
-                            }
-                        ]
-
-                summariser_instance = Summariser(
-                    llmclient, LLM_CHAT_MODEL, bot_identity, chat_identity
+                logger.info(
+                    f"/summary command received from {event.sender_id} in chat {event.chat_id}"
                 )
+                
+                bot_identity, chat_identity = await get_identities(bot, event.chat_id)
+                prompts = []
+
+                async with get_session(DATABASE_PATH) as session:
+                    chat = await session.get(Chat, event.chat_id)
+
+                    if not chat:
+                        logger.warning(f"Chat {event.chat_id} not found in database")
+                        return
+
+                    prior_summary = chat.overall_summary
+
+                    messages = await get_recent_messages(session, event.chat_id, limit=1000)
+                    logger.info(f"Summarising {len(messages)} messages from chat {event.chat_id}")
+                    transcript = format_messages_for_prompt(messages)
+
+                    prompts = [
+                        {
+                            "role": "user",
+                            "content": f"<summary>\n{prior_summary}\n</summary>\n<transcript>{transcript}</transcript>",
+                        }
+                    ]
+
+                summariser_instance = Summariser(llmclient, bot_identity, chat_identity)
                 logger.info("Invoking summariser LLM")
 
                 summary: str = ""
@@ -330,40 +294,10 @@ async def start():
             logger.info("Bot started successfully")
             bot.loop.set_debug(True)
 
-            asyncio.create_task(
-                image_worker(
-                    DATABASE_PATH,
-                    bot,
-                    llmclient,
-                    LLM_CLASSIFIER_MODEL,
-                    BOT_NAME,
-                )
-            )
-            asyncio.create_task(
-                audio_worker(
-                    DATABASE_PATH,
-                    WHISPER_LANGUAGE,
-                    WHISPER_MODEL,
-                )
-            )
-            asyncio.create_task(
-                classification_worker(
-                    DATABASE_PATH,
-                    bot,
-                    llmclient,
-                    LLM_CLASSIFIER_MODEL,
-                    BOT_NAME,
-                )
-            )
-            asyncio.create_task(
-                response_worker(
-                    DATABASE_PATH,
-                    bot,
-                    llmclient,
-                    LLM_CHAT_MODEL,
-                    BOT_NAME,
-                )
-            )
+            asyncio.create_task(image_worker(bot, llmclient))
+            asyncio.create_task(audio_worker())
+            asyncio.create_task(classification_worker(bot, llmclient))
+            asyncio.create_task(response_worker(bot, llmclient))
 
             await bot.run_until_disconnected()
 

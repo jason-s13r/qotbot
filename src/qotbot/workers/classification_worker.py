@@ -3,15 +3,16 @@ from qotbot.database.messages import mark_message_skipped, store_message_classif
 from qotbot.database.models.chat import Chat
 from qotbot.llm.classifier import Classifier
 from qotbot.tools.classification_tools import ClassificationProvider
-from qotbot.workers.build_common_prompts import build_common_prompts
-from qotbot.workers.get_identities import get_identities
+from qotbot.utils.build_common_prompts import build_common_prompts
+from qotbot.utils.config import DATABASE_PATH
+from qotbot.utils.get_identities import get_identities
 from fastmcp import FastMCP
 
 import logging
 import asyncio
 import time
 
-from qotbot.workers.PriorityItem import PriorityItem
+from qotbot.workers.models.PriorityItem import PriorityItem
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +32,7 @@ async def put_classification(
     logger.debug(f"Classification queued: chat={chat_id}, msg={message_id}")
 
 
-async def classification_worker(
-    database_path: str,
-    bot,
-    llmclient,
-    model: str,
-    bot_name: str,
-):
+async def classification_worker(bot, llmclient):
     logger.info("Classification worker started")
 
     while True:
@@ -57,7 +52,7 @@ async def classification_worker(
         message_id = item["message_id"]
 
         try:
-            async with get_session(database_path) as session:
+            async with get_session(DATABASE_PATH) as session:
                 chat = await session.get(Chat, chat_id)
                 if not chat:
                     logger.info(
@@ -74,16 +69,14 @@ async def classification_worker(
                     await session.commit()
                     continue
 
-            bot_identity, chat_identity = await get_identities(
-                bot, chat_id, bot_name, database_path
-            )
-            classifier = Classifier(llmclient, model, bot_identity, chat_identity)
-            common_prompts = await build_common_prompts(database_path, chat_id, [message_id])
+            bot_identity, chat_identity = await get_identities(bot, chat_id)
+            classifier = Classifier(llmclient, bot_identity, chat_identity)
+            common_prompts = await build_common_prompts(chat_id, [message_id])
 
             logger.info(f"Creating FastMCP and classification tools")
             classification_tools = FastMCP(
                 "classifier",
-                providers=[ClassificationProvider(message_id, chat_id, database_path)],
+                providers=[ClassificationProvider(message_id, chat_id)],
             )
 
             logger.info(f"Invoking classifier")

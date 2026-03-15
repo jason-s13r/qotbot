@@ -1,19 +1,19 @@
 from qotbot.database.database import get_session
 from qotbot.database.messages import store_audio_transcription
+from qotbot.utils.config import DATABASE_PATH, WHISPER_LANGUAGE, WHISPER_MODEL
 from qotbot.utils.whisper import WhisperService
 from qotbot.workers.classification_worker import put_classification
 import logging
 import asyncio
 import time
 
-from qotbot.workers.PriorityItem import PriorityItem
+from qotbot.workers.models.PriorityItem import PriorityItem
 
 logger = logging.getLogger(__name__)
 
 audio_queue: asyncio.PriorityQueue[PriorityItem] = asyncio.PriorityQueue()
 
 whisper_service: WhisperService | None = None
-
 
 async def put_audio(
     chat_id: int,
@@ -30,11 +30,7 @@ async def put_audio(
     logger.debug(f"Audio queued: chat={chat_id}, msg={message_id}")
 
 
-async def audio_worker(
-    database_path: str,
-    whisper_language: str | None = None,
-    whisper_model: str = "turbo",
-):
+async def audio_worker():
     global whisper_service
     logger.info("Audio worker started")
     while True:
@@ -53,16 +49,16 @@ async def audio_worker(
             logger.info(f"Processing audio {message_id} in chat {chat_id}")
 
             if not whisper_service:
-                whisper_service = WhisperService(whisper_model)
+                whisper_service = WhisperService(WHISPER_MODEL)
 
             transcription = await whisper_service.transcribe(
-                audio_bytes, language=whisper_language
+                audio_bytes, language=WHISPER_LANGUAGE
             )
 
             if not transcription:
                 transcription = "No transcription generated"
 
-            async with get_session(database_path) as session:
+            async with get_session(DATABASE_PATH) as session:
                 await store_audio_transcription(
                     session, message_id, chat_id, transcription
                 )

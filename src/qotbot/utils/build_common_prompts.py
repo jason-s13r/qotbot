@@ -6,6 +6,9 @@ from qotbot.database.messages import (
 )
 from qotbot.database.models.message import Message
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
+
+from qotbot.utils.config import DATABASE_PATH
 
 
 def format_message_for_prompt(message: Message) -> str:
@@ -23,23 +26,23 @@ def format_messages_for_prompt(messages: list[Message]) -> str:
 
 
 async def build_common_prompts(
-    database_path: str,
     chat_id: int,
     message_ids: list[int],
+    max_recent_messages: int = 50,
 ) -> list[dict]:
-    async with get_session(database_path) as session:
+    async with get_session(DATABASE_PATH) as session:
         result = await session.execute(
-            select(Message).filter(
-                Message.chat_id == chat_id, Message.id.in_(message_ids)
-            )
+            select(Message)
+            .filter(Message.chat_id == chat_id, Message.id.in_(message_ids))
+            .options(joinedload(Message.sender))
         )
-        messages = result.scalars().all()
+        messages = list(result.scalars().all())
 
         if not messages:
             return []
 
         recent_messages = await get_recent_messages(
-            session, chat_id, limit=50, exclude_ids=message_ids
+            session, chat_id, limit=max_recent_messages, exclude_ids=message_ids
         )
         overall_summary = await get_chat_overall_summary(session, chat_id)
 

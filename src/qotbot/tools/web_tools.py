@@ -1,10 +1,12 @@
 import os
+
 import aiohttp
 from fastmcp import FastMCP
 
+from qotbot.utils.config import WEB_TIMEOUT
+
 web_tools = FastMCP("Web Search")
 
-WEB_TIMEOUT = int(os.getenv("WEB_TIMEOUT", "20"))
 
 
 @web_tools.tool
