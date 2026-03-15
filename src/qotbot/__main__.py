@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import tempfile
 
 from datetime import datetime, timezone
 
@@ -49,7 +48,9 @@ logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s][%(levelname)s][%(name)s:%(lineno)s %(funcName)s()] %(message)s",
     handlers=[
-        logging.handlers.TimedRotatingFileHandler(LOG_PATH / "log.log", when="H", encoding="utf-8"),
+        logging.handlers.TimedRotatingFileHandler(
+            LOG_PATH / "log.log", when="H", encoding="utf-8"
+        ),
         logging.StreamHandler(),
     ],
 )
@@ -172,7 +173,7 @@ async def start():
                 logger.info(
                     f"/summary command received from {event.sender_id} in chat {event.chat_id}"
                 )
-                
+
                 bot_identity, chat_identity = await get_identities(bot, event.chat_id)
                 prompts = []
 
@@ -185,8 +186,12 @@ async def start():
 
                     prior_summary = chat.overall_summary
 
-                    messages = await get_recent_messages(session, event.chat_id, limit=1000)
-                    logger.info(f"Summarising {len(messages)} messages from chat {event.chat_id}")
+                    messages = await get_recent_messages(
+                        session, event.chat_id, limit=1000
+                    )
+                    logger.info(
+                        f"Summarising {len(messages)} messages from chat {event.chat_id}"
+                    )
                     transcript = format_messages_for_prompt(messages)
 
                     prompts = [
@@ -223,23 +228,16 @@ async def start():
                     session.add(chat)
                     logger.info("Summary saved to database")
 
-                if summary:
-                    with tempfile.NamedTemporaryFile(
-                        mode="w", suffix=".md", delete=False
-                    ) as f:
-                        f.write(summary)
-                        temp_path = f.name
+                if not summary:
+                    return
 
-                    try:
-                        express = summary.split("----")[0].strip("#")[:1000]
-                        msg = await event.reply(express)
-                        async with event.client.action(event.chat_id, "document"):
-                            file = await event.client.upload_file(
-                                temp_path, file_name="summary.md"
-                            )
-                            await msg.reply(file=file)
-                    finally:
-                        os.unlink(temp_path)
+                express = summary.split("----")[0].strip("#")[:1000]
+                msg = await event.reply(express)
+                async with event.client.action(event.chat_id, "document"):
+                    file = await event.client.upload_file(
+                        summary.encode("utf-8"), file_name="summary.md"
+                    )
+                    await msg.reply(file=file)
 
             @bot.on(events.NewMessage)
             async def handle_incoming_event(event: events.NewMessage.Event):
