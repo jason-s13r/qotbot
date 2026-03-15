@@ -1,7 +1,6 @@
 import asyncio
+import io
 import logging
-import tempfile
-from pathlib import Path
 
 import librosa
 import whisper
@@ -35,35 +34,22 @@ class WhisperService:
         """
         loop = asyncio.get_running_loop()
 
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-            f.write(audio_bytes)
-            temp_path = f.name
+        logger.debug(f"Transcribing audio with Whisper ({self.model_name})")
 
-        try:
-            logger.debug(f"Transcribing audio with Whisper ({self.model_name})")
+        def _transcribe():
+            # Quick validation: check audio bytes are not empty
+            if len(audio_bytes) == 0:
+                raise ValueError("Audio file is empty")
 
-            def _transcribe():
-                # Quick validation: check file size before loading
-                temp_file = Path(temp_path)
-                if temp_file.stat().st_size == 0:
-                    raise ValueError("Audio file is empty")
+            # Load audio from bytes to validate it has content
+            audio_buffer = io.BytesIO(audio_bytes)
+            audio, sr = librosa.load(audio_buffer, sr=None)
+            if audio.size == 0 or len(audio) < sr * 0.1:
+                raise ValueError("Audio file is empty or too short")
 
-                # Load audio to validate it has content
-                audio, sr = librosa.load(temp_path, sr=None)
-                if audio.size == 0 or len(audio) < sr * 0.1:
-                    raise ValueError("Audio file is empty or too short")
+            return self.model.transcribe(audio, language=language, verbose=False)
 
-                return self.model.transcribe(
-                    temp_path, language=language if language else None, verbose=False
-                )
-
-            result = await loop.run_in_executor(None, _transcribe)
-            text = result["text"].strip()
-            logger.debug(f"Transcription complete: {len(text)} characters")
-            return text
-
-        except Exception as e:
-            logger.error(f"Whisper transcription failed: {e}", exc_info=True)
-            raise
-        finally:
-            Path(temp_path).unlink(missing_ok=True)
+        result = await loop.run_in_executor(None, _transcribe)
+        text = result["text"].strip()
+        logger.debug(f"Transcription complete: {len(text)} characters")
+        return text
