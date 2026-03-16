@@ -1,6 +1,6 @@
 from qotbot.database.database import get_session
 from qotbot.database.messages import store_audio_transcription
-from qotbot.utils.config import DATABASE_PATH, WHISPER_LANGUAGE, WHISPER_MODEL
+from qotbot.utils.config import DATABASE_PATH
 from qotbot.utils.whisper import WhisperService
 from qotbot.workers.classification_worker import put_classification
 import logging
@@ -12,22 +12,26 @@ from qotbot.workers.models.PriorityItem import PriorityItem
 logger = logging.getLogger(__name__)
 
 audio_queue: asyncio.PriorityQueue[PriorityItem] = asyncio.PriorityQueue()
-
 whisper_service: WhisperService | None = None
+
 
 async def put_audio(
     chat_id: int,
     message_id: int,
-    audio_bytes: bytes,
+    media_bytes: bytes,
     priority: int = 0,
+    ext: str | None = None,
 ):
     item = {
         "chat_id": chat_id,
         "message_id": message_id,
-        "audio_bytes": audio_bytes,
+        "media_bytes": media_bytes,
+        "ext": ext,
     }
     await audio_queue.put(PriorityItem(priority, time.time(), item))
-    logger.debug(f"Audio queued: chat={chat_id}, msg={message_id}")
+    logger.debug(
+        f"Audio queued: chat={chat_id}, msg={message_id}, ext={ext}"
+    )
 
 
 async def audio_worker():
@@ -43,17 +47,18 @@ async def audio_worker():
         item = priority_item.item
         chat_id = item["chat_id"]
         message_id = item["message_id"]
-        audio_bytes = item["audio_bytes"]
+        media_bytes = item["media_bytes"]
+        ext = item.get("ext", None)
 
         try:
-            logger.info(f"Processing audio {message_id} in chat {chat_id}")
+            logger.info(
+                f"Processing audio {message_id} in chat {chat_id} (ext={ext})"
+            )
 
             if not whisper_service:
-                whisper_service = WhisperService(WHISPER_MODEL)
+                whisper_service = WhisperService()
 
-            transcription = await whisper_service.transcribe(
-                audio_bytes, language=WHISPER_LANGUAGE
-            )
+            transcription = await whisper_service.transcribe(media_bytes, ext)
 
             if not transcription:
                 transcription = "No transcription generated"
@@ -70,10 +75,3 @@ async def audio_worker():
 
         except Exception as e:
             logger.error(f"Audio worker error: {e}", exc_info=True)
-            await put_audio(
-                chat_id,
-                message_id,
-                audio_bytes,
-                priority_item.priority + 1,
-            )
-            logger.info(f"Re-queued audio {message_id} with increased priority")

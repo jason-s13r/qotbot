@@ -22,7 +22,7 @@ from qotbot.database.models.chat import Chat
 from qotbot.database.models.message import Message
 from qotbot.llm.summariser import Summariser
 from qotbot.utils.build_common_prompts import format_messages_for_prompt
-from qotbot.utils.config import DATA_PATH, DATABASE_PATH, LOG_PATH, TELEGRAM_BOT_OWNER
+from qotbot.utils.config import DATA_PATH, DATABASE_PATH, LOG_PATH, MAX_TRANSCRIPT_DURATION, TELEGRAM_BOT_OWNER
 from qotbot.utils.get_identities import get_identities
 from qotbot.utils.media import download_media_base64
 from qotbot.workers.audio_worker import audio_worker, put_audio
@@ -259,17 +259,30 @@ async def start():
 
                 has_image = event.photo is not None or event.sticker is not None
                 has_audio = event.audio is not None or event.voice is not None
+                has_video = event.video_note is not None or event.video is not None
 
                 message_age_minutes = (
                     datetime.now(timezone.utc) - event.message.date
                 ).total_seconds() / 60
 
-                if has_audio:
+                if has_audio or has_video:
+                    if event.file.duration > MAX_TRANSCRIPT_DURATION:
+                        logger.warning(
+                            f"File duration {event.file.duration} exceeds max transcript duration, skipping transcription for message {message_id}"
+                        )
+                        has_audio = False
+                        has_video = False
+
+                if has_audio or has_video:
                     try:
-                        audio_bytes = await event.message.download_media(bytes)
-                        if audio_bytes:
+                        media_bytes = await event.message.download_media(bytes)
+                        if media_bytes:
                             await put_audio(
-                                chat_id, message_id, audio_bytes, message_age_minutes
+                                chat_id,
+                                message_id,
+                                media_bytes,
+                                message_age_minutes,
+                                ext=event.file.ext
                             )
                             logger.info(f"Audio queued for transcription: {message_id}")
                     except Exception as e:
@@ -285,7 +298,7 @@ async def start():
                     except Exception as e:
                         logger.error(f"Image queue failed: {e}", exc_info=True)
 
-                if not has_audio and not has_image:
+                if not has_audio and not has_image and not has_video:
                     await put_classification(chat_id, message_id, message_age_minutes)
                     logger.info(f"Message queued for classification: {message_id}")
 

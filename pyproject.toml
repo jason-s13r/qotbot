@@ -9,6 +9,7 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "cryptg>=0.5.1",
     "fastmcp>=3.0.0",
+    "ffmpeg-python>=0.2.0",
     "openai>=2.26.0",
     "openai-whisper>=20250625",
     "librosa>=0.10.0",

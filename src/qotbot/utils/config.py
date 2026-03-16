@@ -20,10 +20,11 @@ DATABASE_PATH = DATA_PATH / "database.db"
 LOG_PATH = DATA_PATH / "logs"
 
 # Telegram
-TELEGRAM_BOT_OWNER = int(os.getenv("TELEGRAM_BOT_OWNER", "0"))
+TELEGRAM_BOT_OWNER = int(os.getenv("TELEGRAM_BOT_OWNER", 0))
 
 # Response worker config
-MAX_BATCH_SIZE = int(os.getenv("MAX_BATCH_SIZE", "10"))
+MAX_BATCH_SIZE = int(os.getenv("MAX_BATCH_SIZE", 10))
 
 # Web tools
-WEB_TIMEOUT = int(os.getenv("WEB_TIMEOUT", "20"))
+WEB_TIMEOUT = int(os.getenv("WEB_TIMEOUT", 20))
+MAX_TRANSCRIPT_DURATION = int(os.getenv("MAX_TRANSCRIPT_DURATION", 120))
