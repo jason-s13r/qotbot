@@ -10,6 +10,7 @@ from qotbot.tools.telegram import TelegramProvider
 from qotbot.tools.web_tools import web_tools
 from qotbot.utils.build_common_prompts import build_common_prompts
 from qotbot.utils.get_identities import get_identities
+from fastmcp.server.transforms import ResourcesAsTools
 
 from fastmcp import FastMCP
 
@@ -98,6 +99,7 @@ async def response_worker(bot, llmclient):
             chat_tools.mount(web_tools)
             chat_tools.mount(lolcryption)
             chat_tools.mount(date_tool)
+            chat_tools.add_transform(ResourcesAsTools(chat_tools))
 
             logger.info(common_prompts[-1]["content"])
             logger.info(f"Invoking Chatter for messages {message_ids}")

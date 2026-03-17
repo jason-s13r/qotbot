@@ -71,8 +71,8 @@ class Agent:
                 "Tool Call: [%s] %s args: %s\nRESULT: %s",
                 tool_call.id,
                 name,
-                args,
-                result,
+                str(args)[:200],
+                str(result)[:200],
             )
             content_text = _extract_tool_result_text(result)
             return {"role": "tool", "tool_call_id": tool_call.id, "content": content_text}

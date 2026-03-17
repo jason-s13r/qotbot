@@ -17,6 +17,7 @@ dependencies = [
     "sqlalchemy>=2.0.43",
     "telethon>=1.40.0",
     "greenlet>=3.3.2",
+    "ollama>=0.6.1",
 ]
 
 [build-system]
