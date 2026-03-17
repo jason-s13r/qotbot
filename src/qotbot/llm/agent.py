@@ -127,7 +127,7 @@ class Agent:
         prompts: list[dict[str, Any]],
         tools: FastMCP | None = None,
         max_completion_tokens: int | None = 1024,
-        max_iterations: int | None = 5
+        max_iterations: int | None = 10
     ) -> str | None:
         schemas = await self._tool_schema(tools) if tools else []
         messages = self._system + prompts
