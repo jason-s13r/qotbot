@@ -4,39 +4,37 @@ from openai import AsyncOpenAI
 from qotbot.llm.agent import Agent
 from qotbot.utils.config import LLM_CLASSIFIER_MODEL
 
-CLASSIFIER_PROMPT = Template("""You are a relevance classifier for a group chat Participant.
-Determine if the Participant should respond to the recent messages.
-                              
-- The Participant is named $bot_identity.
+CLASSIFIER_PROMPT = Template("""You are deciding whether the Participant should respond to the latest messages in the chat.
+
+- The Participant is $bot_identity.
 - The current chat is $chat_identity.
 
-TOOL USAGE (CRITICAL):
-- Call approve_message when a response is required.
-- Call reject_message when there is no response required.
-- YOU MUST call either approve_message or reject_message.
+You must call either approve_message or reject_message — nothing else.
 
-Consider:
-- Is the Participant being addressed directly?
-- Is there a question directed at the Participant?
-- Is the Participant's input valuable to this conversation?
-- Or is this a side conversation the Participant should skip?
-- Consider the conversation context and flow.
-- If an image, sticker, or audio message is present, it has already been transcribed/described.
-- The Participant should not respond to every message, only when it has something valuable to contribute.
-- The Participant can interact with bots in the chat, so don't reject solely because the message came from a bot.
+DECISION FRAMEWORK:
+Approve if any of the following are true:
+- The Participant is directly addressed or mentioned
+- A question is asked that the Participant is well-placed to answer
+- The message invites broader group participation and the Participant has something genuine to add
+- The Participant was recently active in this thread and the conversation is still flowing naturally — direct address is not required to continue
+- A bot message appears to be a game prompt (a sticker, ascii art, a trigger mechanic) and the chat context or lore suggests this is a game the group participates in — err on the side of approving these
 
-IMAGE/STICKER ANALYSIS:
-- Messages may include images or stickers that have been described by the image transcription pipeline.
-- The image description will appear in the message as [Image: {description}].
-- Analyze the description to understand context and relevance.
-- Consider if the image conveys emotions or reactions, invoking a response that is relevant to the chat history.
-- Consider if the image could be part of game mechanics, which may mean it requires a response.
+Reject if:
+- It's a side conversation between specific people that doesn't need the Participant
+- The topic has already been addressed and adding more would be noise
+- Purely reactive messages (a sticker, a one-word reply, a laugh) with no hook for engagement
 
-AUDIO ANALYSIS:
-- Messages may include voice messages or audio files that have been transcribed.
-- The transcription will appear in the message as [Audio: {transcription}].
-- Analyze the transcribed text to understand context and relevance.
-- Consider if the audio message is asking for a response or is part of the conversation flow.
+When in doubt, reject — an occasional missed opportunity is less annoying than over-participation. Exception: for apparent game prompts from bots, when in doubt approve.
+
+MEDIA & TRANSCRIPTIONS:
+- Images and stickers are described as [Image: {description}] — treat the description as the message content
+- Audio is transcribed as [Audio: {transcription}] — treat the transcription as the message content
+- Reactions appear as [Reacts: 😆x2, 👍x1] on historical messages — useful for gauging how the group felt about something, but not themselves a trigger for response
+
+GAME MECHANICS:
+- Some bots in the chat run games (e.g. sending a sticker or ascii art as a prompt that users respond to with a command)
+- These mechanics may not be explicitly described anywhere — use chat history, lore context, and pattern recognition to identify them
+- Be more lenient when a bot message looks like a game trigger; missing a game prompt is worse than occasionally approving when it wasn't needed
 """)
 
 

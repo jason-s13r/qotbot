@@ -22,7 +22,13 @@ from qotbot.database.models.chat import Chat
 from qotbot.database.models.message import Message
 from qotbot.llm.summariser import Summariser
 from qotbot.utils.build_common_prompts import format_messages_for_prompt
-from qotbot.utils.config import DATA_PATH, DATABASE_PATH, LOG_PATH, MAX_TRANSCRIPT_DURATION, TELEGRAM_BOT_OWNER
+from qotbot.utils.config import (
+    DATA_PATH,
+    DATABASE_PATH,
+    LOG_PATH,
+    MAX_TRANSCRIPT_DURATION,
+    TELEGRAM_BOT_OWNER,
+)
 from qotbot.utils.get_identities import get_identities
 from qotbot.utils.media import download_media_base64
 from qotbot.workers.audio_worker import audio_worker, put_audio
@@ -74,9 +80,7 @@ async def start():
         async with get_session(DATABASE_PATH) as session:
             await create_or_update_bot_user(session, bot)
 
-        @bot.on(
-            events.NewMessage(pattern=r"(?i)^/bye$", from_users=TELEGRAM_BOT_OWNER)
-        )
+        @bot.on(events.NewMessage(pattern=r"(?i)^/bye$", from_users=TELEGRAM_BOT_OWNER))
         async def handle_bye_event(event: events.NewMessage.Event):
             """Leave the chat."""
             try:
@@ -124,17 +128,13 @@ async def start():
                         return
 
                     if message.audio_transcription:
-                        logger.info(
-                            f"Sending audio transcription for message {msg_id}"
-                        )
+                        logger.info(f"Sending audio transcription for message {msg_id}")
                         await event.reply(
                             f"Audio transcription: {message.audio_transcription}"
                         )
 
                     if message.image_description:
-                        logger.info(
-                            f"Sending image description for message {msg_id}"
-                        )
+                        logger.info(f"Sending image description for message {msg_id}")
                         await event.reply(
                             f"Image description: {message.image_description}"
                         )
@@ -142,9 +142,7 @@ async def start():
         @bot.on(events.NewMessage(pattern=r"(?i)^/classification$"))
         async def handle_classification_event(event: events.NewMessage.Event):
             async with get_session(DATABASE_PATH) as session:
-                logger.info(
-                    f"/classification command received from {event.sender_id}"
-                )
+                logger.info(f"/classification command received from {event.sender_id}")
                 if not event.reply_to:
                     logger.info("No reply_to found, ignoring")
                     return
@@ -185,9 +183,7 @@ async def start():
 
                 prior_summary = chat.overall_summary
 
-                messages = await get_recent_messages(
-                    session, event.chat_id, limit=1000
-                )
+                messages = await get_recent_messages(session, event.chat_id, limit=1000)
                 logger.info(
                     f"Summarising {len(messages)} messages from chat {event.chat_id}"
                 )
@@ -276,13 +272,7 @@ async def start():
                 try:
                     media_bytes = await event.message.download_media(bytes)
                     if media_bytes:
-                        await put_audio(
-                            chat_id,
-                            message_id,
-                            media_bytes,
-                            message_age_minutes,
-                            ext=event.file.ext
-                        )
+                        put_audio(chat_id, message_id, media_bytes, ext=event.file.ext)
                         logger.info(f"Audio queued for transcription: {message_id}")
                 except Exception as e:
                     logger.error(f"Audio queue failed: {e}", exc_info=True)
@@ -290,15 +280,13 @@ async def start():
             if has_image:
                 try:
                     image_base64 = await download_media_base64(event.message)
-                    await put_image(
-                        chat_id, message_id, image_base64, message_age_minutes
-                    )
+                    put_image(chat_id, message_id, image_base64)
                     logger.info(f"Image queued for description: {message_id}")
                 except Exception as e:
                     logger.error(f"Image queue failed: {e}", exc_info=True)
 
             if not has_audio and not has_image and not has_video:
-                await put_classification(chat_id, message_id, message_age_minutes)
+                put_classification(chat_id, message_id)
                 logger.info(f"Message queued for classification: {message_id}")
 
         logger.info("Bot started successfully")

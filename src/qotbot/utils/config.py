@@ -23,7 +23,9 @@ LOG_PATH = DATA_PATH / "logs"
 TELEGRAM_BOT_OWNER = int(os.getenv("TELEGRAM_BOT_OWNER", 0))
 
 # Response worker config
-MAX_BATCH_SIZE = int(os.getenv("MAX_BATCH_SIZE", 10))
+MAX_BATCH_SIZE = int(os.getenv("MAX_BATCH_SIZE", 5))
+MAX_RESPONSE_QUEUE_SIZE = int(os.getenv("MAX_RESPONSE_QUEUE_SIZE", 20))
+RESPONSE_WAIT_TIME = int(os.getenv("RESPONSE_WAIT_TIME", 30))
 
 # Web tools
 WEB_TIMEOUT = int(os.getenv("WEB_TIMEOUT", 20))

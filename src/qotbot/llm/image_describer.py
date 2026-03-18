@@ -4,30 +4,20 @@ from openai import AsyncOpenAI
 from qotbot.llm.agent import Agent
 from qotbot.utils.config import LLM_VISION_MODEL
 
-IMAGE_DESCRIBER_PROMPT = Template("""You are an image describer for a group chat.
-Your task is to provide clear, concise descriptions of images, stickers, and other visual media.
 
-- The Participant is named $bot_identity.
-- The current chat is $chat_identity.
+IMAGE_DESCRIBER_PROMPT = """You are describing visual media from a group chat so that other systems can understand its content.
 
-Describe what you see:
-- Identify the main subject(s)
-- Note any text visible in the image
-- Describe the context or setting
-- For stickers, identify the emotion or reaction conveyed
-- Keep descriptions factual and neutral
-- Be concise but informative (2-4 sentences)
+Describe what you see clearly and concisely:
+- Identify the main subject(s) and any relevant context or setting
+- Note any visible text verbatim
+- For stickers or emoji-style images, identify the emotion or reaction they convey
 
-Do not:
-- Make assumptions about intent
-- Add emotional interpretation unless clearly evident
-- Describe beyond what is visible""")
+Keep descriptions factual. 1-2 sentences for simple stickers, up to 4 for complex images. Do not speculate beyond what is visible.
+"""
 
 
 class ImageDescriber(Agent):
-    def __init__(
-        self, client: AsyncOpenAI, bot_identity: str, chat_identity: str
-    ):
+    def __init__(self, client: AsyncOpenAI, bot_identity: str, chat_identity: str):
         super().__init__(
             client,
             LLM_VISION_MODEL,

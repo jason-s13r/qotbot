@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from qotbot.database.database import get_session
 from qotbot.database.messages import store_image_description
 from qotbot.llm.image_describer import ImageDescriber
@@ -6,44 +8,43 @@ from qotbot.workers.classification_worker import put_classification
 from telethon import TelegramClient
 import logging
 import asyncio
-import time
 
 from qotbot.utils.get_identities import get_identities
-from qotbot.workers.models.PriorityItem import PriorityItem
 
 logger = logging.getLogger(__name__)
 
-image_queue: asyncio.PriorityQueue[PriorityItem] = asyncio.PriorityQueue()
+
+@dataclass(order=True)
+class ImageTask:
+    chat_id: int
+    message_id: int
+    image_data: str
 
 
-async def put_image(
+image_queue: asyncio.Queue[ImageTask] = asyncio.Queue()
+
+
+def put_image(
     chat_id: int,
     message_id: int,
-    base64_data: str,
-    priority: int = 0,
+    image_data: str,
 ):
-    item = {
-        "chat_id": chat_id,
-        "message_id": message_id,
-        "base64_data": base64_data,
-    }
-    await image_queue.put(PriorityItem(priority, time.time(), item))
+    image_queue.put_nowait(ImageTask(chat_id, message_id, image_data))
     logger.debug(f"Image queued: chat={chat_id}, msg={message_id}")
 
 
 async def image_worker(bot: TelegramClient, llmclient):
-    logger.info("Image worker started")
+    logger.info("worker started")
     while True:
         try:
-            priority_item = await asyncio.wait_for(image_queue.get(), timeout=1.0)
+            item = await asyncio.wait_for(image_queue.get(), timeout=1.0)
         except asyncio.TimeoutError:
             await asyncio.sleep(0.1)
             continue
 
-        item = priority_item.item
-        chat_id = item["chat_id"]
-        message_id = item["message_id"]
-        base64_data = item["base64_data"]
+        chat_id = item.chat_id
+        message_id = item.message_id
+        image_data = item.image_data
 
         try:
             logger.info(f"Processing image {message_id} in chat {chat_id}")
@@ -58,7 +59,7 @@ async def image_worker(bot: TelegramClient, llmclient):
                         {
                             "type": "image_url",
                             "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_data}"
+                                "url": f"data:image/jpeg;base64,{image_data}"
                             },
                         }
                     ],
@@ -75,14 +76,7 @@ async def image_worker(bot: TelegramClient, llmclient):
 
             logger.info(f"Image description stored for message {message_id}")
 
-            await put_classification(chat_id, message_id, priority_item.priority)
+            put_classification(chat_id, message_id)
 
         except Exception as e:
             logger.error(f"Image worker error: {e}", exc_info=True)
-            await put_image(
-                chat_id,
-                message_id,
-                base64_data,
-                priority_item.priority + 1,
-            )
-            logger.info(f"Re-queued image {message_id} with increased priority")
