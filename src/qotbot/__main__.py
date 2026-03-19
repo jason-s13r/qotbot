@@ -8,6 +8,7 @@ from openai import AsyncOpenAI
 from telethon import TelegramClient, events
 from telethon.tl.functions.channels import LeaveChannelRequest
 
+from qotbot.utils.command import Command
 from qotbot.database import (
     init_db,
     get_session,
@@ -27,7 +28,6 @@ from qotbot.utils.config import (
     DATABASE_PATH,
     LOG_PATH,
     MAX_TRANSCRIPT_DURATION,
-    TELEGRAM_BOT_OWNER,
 )
 from qotbot.utils.get_identities import get_identities
 from qotbot.utils.media import download_media_base64
@@ -62,7 +62,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 async def start():
     logger.info("Initialising database:")
     await init_db(DATABASE_PATH)
@@ -77,11 +76,19 @@ async def start():
         await bot.start(bot_token=BOT_TOKEN)
 
     async with bot:
+        commands = Command(bot, await bot.get_me())
         async with get_session(DATABASE_PATH) as session:
             await create_or_update_bot_user(session, bot)
 
-        @bot.on(events.NewMessage(pattern=r"(?i)^/bye$", from_users=TELEGRAM_BOT_OWNER))
-        async def handle_bye_event(event: events.NewMessage.Event):
+        @commands.slash('help')
+        async def handle_help(event: events.NewMessage.Event, payload: str = None):
+            """Show this help message."""
+            async with event.client.action(event.chat_id, "typing"):
+                message = await commands.build_help_message()
+                await event.respond(message)
+
+        @commands.slash("bye", commands.Permissions(bot_owner=True, is_scoped=True))
+        async def handle_bye_event(event: events.NewMessage.Event, payload: str = None):
             """Leave the chat."""
             try:
                 input_chat = await event.get_input_chat()
@@ -92,23 +99,24 @@ async def start():
                 async with event.client.action(event.chat_id, "typing"):
                     await event.respond(f"Error leaving chat: {e}")
 
-        @bot.on(
-            events.NewMessage(
-                pattern=r"(?i)^/(enable|disable)$", from_users=TELEGRAM_BOT_OWNER
-            )
-        )
-        async def handle_permit_event(event: events.NewMessage.Event):
-            async with get_session(DATABASE_PATH) as session:
-                can_respond = event.raw_text.lower() == "/enable"
+        @commands.slash("disconnect", commands.Permissions(bot_owner=True, is_scoped=True))
+        async def handle_disconnect_event(event: events.NewMessage.Event, payload: str = None):
+            """Disconnect the bot."""
+            await bot.disconnect()
 
-                chat = await set_chat_can_respond(session, event, can_respond)
-                async with event.client.action(event.chat_id, "typing"):
-                    await event.respond(
-                        f"Bot responding {'enabled' if chat.can_respond else 'disabled'} for this chat"
-                    )
+        @commands.slash('disable', commands.Permissions(chat_admin=True, is_scoped=True))
+        async def handle_disable(event: events.NewMessage.Event, payload: str = None):
+            """Disable bot responses in this chat."""
+            await _toggle_can_respond(event, False)
 
-        @bot.on(events.NewMessage(pattern=r"(?i)^/transcript$"))
-        async def handle_transcript_event(event: events.NewMessage.Event):
+        @commands.slash('enable', commands.Permissions(chat_admin=True, is_scoped=True))
+        async def handle_enable(event: events.NewMessage.Event, payload: str = None):
+            """Enable bot responses in this chat."""
+            await _toggle_can_respond(event, True)
+
+        @commands.slash("transcript")
+        async def handle_transcript_event(event: events.NewMessage.Event, payload: str = None):
+            """Show the transcript of a message."""
             async with get_session(DATABASE_PATH) as session:
                 logger.info(f"/transcript command received from {event.sender_id}")
                 if not event.reply_to:
@@ -139,8 +147,9 @@ async def start():
                             f"Image description: {message.image_description}"
                         )
 
-        @bot.on(events.NewMessage(pattern=r"(?i)^/classification$"))
-        async def handle_classification_event(event: events.NewMessage.Event):
+        @commands.slash("classification")
+        async def handle_classification_event(event: events.NewMessage.Event, payload: str = None):
+            """Show the classification reason of a message."""
             async with get_session(DATABASE_PATH) as session:
                 logger.info(f"/classification command received from {event.sender_id}")
                 if not event.reply_to:
@@ -165,8 +174,9 @@ async def start():
                         )
                         await event.reply(message.classification_reason)
 
-        @bot.on(events.NewMessage(pattern=r"(?i)^/summary$"))
-        async def handle_summary_event(event: events.NewMessage.Event):
+        @commands.slash("summary")
+        async def handle_summary_event(event: events.NewMessage.Event, payload: str = None):
+            """Show the summary of the chat."""
             logger.info(
                 f"/summary command received from {event.sender_id} in chat {event.chat_id}"
             )
@@ -298,6 +308,15 @@ async def start():
         asyncio.create_task(response_worker(bot, llmclient))
 
         await bot.run_until_disconnected()
+
+async def _toggle_can_respond(event: events.NewMessage.Event, can_respond=True):
+    """Enable bot responses in this chat."""
+    async with get_session(DATABASE_PATH) as session:
+        chat = await set_chat_can_respond(session, event, can_respond)
+        async with event.client.action(event.chat_id, "typing"):
+            await event.respond(
+                f"Bot responding {'enabled' if chat.can_respond else 'disabled'} for this chat"
+            )
 
 
 def main():
