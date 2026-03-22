@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 
 from datetime import datetime, timezone
 
@@ -8,6 +9,12 @@ from openai import AsyncOpenAI
 from telethon import TelegramClient, events
 from telethon.tl.functions.channels import LeaveChannelRequest
 
+from qotbot.database.rules import (
+    add_rule,
+    delete_rule,
+    get_all_rules_for_chat,
+    update_rule,
+)
 from qotbot.utils.command import Command
 from qotbot.database import (
     init_db,
@@ -62,6 +69,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 async def start():
     logger.info("Initialising database:")
     await init_db(DATABASE_PATH)
@@ -80,7 +88,7 @@ async def start():
         async with get_session(DATABASE_PATH) as session:
             await create_or_update_bot_user(session, bot)
 
-        @commands.slash('help')
+        @commands.slash("help")
         async def handle_help(event: events.NewMessage.Event, payload: str = None):
             """Show this help message."""
             async with event.client.action(event.chat_id, "typing"):
@@ -99,23 +107,31 @@ async def start():
                 async with event.client.action(event.chat_id, "typing"):
                     await event.respond(f"Error leaving chat: {e}")
 
-        @commands.slash("disconnect", commands.Permissions(bot_owner=True, is_scoped=True))
-        async def handle_disconnect_event(event: events.NewMessage.Event, payload: str = None):
+        @commands.slash(
+            "disconnect", commands.Permissions(bot_owner=True, is_scoped=True)
+        )
+        async def handle_disconnect_event(
+            event: events.NewMessage.Event, payload: str = None
+        ):
             """Disconnect the bot."""
             await bot.disconnect()
 
-        @commands.slash('disable', commands.Permissions(chat_admin=True, is_scoped=True))
+        @commands.slash(
+            "disable", commands.Permissions(chat_admin=True, is_scoped=True)
+        )
         async def handle_disable(event: events.NewMessage.Event, payload: str = None):
             """Disable bot responses in this chat."""
             await _toggle_can_respond(event, False)
 
-        @commands.slash('enable', commands.Permissions(chat_admin=True, is_scoped=True))
+        @commands.slash("enable", commands.Permissions(chat_admin=True, is_scoped=True))
         async def handle_enable(event: events.NewMessage.Event, payload: str = None):
             """Enable bot responses in this chat."""
             await _toggle_can_respond(event, True)
 
         @commands.slash("transcript")
-        async def handle_transcript_event(event: events.NewMessage.Event, payload: str = None):
+        async def handle_transcript_event(
+            event: events.NewMessage.Event, payload: str = None
+        ):
             """Show the transcript of a message."""
             async with get_session(DATABASE_PATH) as session:
                 logger.info(f"/transcript command received from {event.sender_id}")
@@ -148,7 +164,9 @@ async def start():
                         )
 
         @commands.slash("classification")
-        async def handle_classification_event(event: events.NewMessage.Event, payload: str = None):
+        async def handle_classification_event(
+            event: events.NewMessage.Event, payload: str = None
+        ):
             """Show the classification reason of a message."""
             async with get_session(DATABASE_PATH) as session:
                 logger.info(f"/classification command received from {event.sender_id}")
@@ -175,7 +193,9 @@ async def start():
                         await event.reply(message.classification_reason)
 
         @commands.slash("summary")
-        async def handle_summary_event(event: events.NewMessage.Event, payload: str = None):
+        async def handle_summary_event(
+            event: events.NewMessage.Event, payload: str = None
+        ):
             """Show the summary of the chat."""
             logger.info(
                 f"/summary command received from {event.sender_id} in chat {event.chat_id}"
@@ -244,6 +264,87 @@ async def start():
                 )
                 await msg.reply(file=file)
 
+        @commands.slash("rules", commands.Permissions(chat_admin=True, is_scoped=True))
+        async def handle_rules_event(
+            event: events.NewMessage.Event, payload: str = None
+        ):
+            """Manage chat rules for LLM behavior."""
+            logger.info(
+                f"/rules command received from {event.sender_id} in chat {event.chat_id}"
+            )
+
+            VALID_SPECIFIERS = {"chatter", "classifier"}
+            add_match = re.match(r"^add\s+(\S+)\s+(.+)$", payload or "")
+            edit_match = re.match(r"^edit\s+(\d+)\s+(.+)$", payload or "")
+            delete_match = re.match(r"^delete\s+(\d+)$", payload or "")
+            list_match = re.match(r"^list$", payload or "")
+
+            async with get_session(DATABASE_PATH) as session:
+                if add_match:
+                    specifier = add_match.group(1)
+                    rule_text = add_match.group(2)
+                    if specifier not in VALID_SPECIFIERS:
+                        async with event.client.action(event.chat_id, "typing"):
+                            await event.respond(
+                                f"Invalid specifier '{specifier}'. Valid specifiers: {', '.join(VALID_SPECIFIERS)}"
+                            )
+                        return
+                    rule = await add_rule(session, event.chat_id, specifier, rule_text)
+                    async with event.client.action(event.chat_id, "typing"):
+                        await event.respond(
+                            f"Rule added (ID: {rule.id}): [{rule.specifier}] {rule.text}"
+                        )
+
+                elif edit_match:
+                    rule_id = int(edit_match.group(1))
+                    rule_text = edit_match.group(2)
+                    rule = await update_rule(session, event.chat_id, rule_id, rule_text)
+                    if rule:
+                        async with event.client.action(event.chat_id, "typing"):
+                            await event.respond(
+                                f"Rule updated (ID: {rule.id}): [{rule.specifier}] {rule.text}"
+                            )
+                    else:
+                        async with event.client.action(event.chat_id, "typing"):
+                            await event.respond(
+                                f"Rule {rule_id} not found or not in this chat."
+                            )
+
+                elif delete_match:
+                    rule_id = int(delete_match.group(1))
+                    deleted = await delete_rule(session, event.chat_id, rule_id)
+                    if deleted:
+                        async with event.client.action(event.chat_id, "typing"):
+                            await event.respond(f"Rule {rule_id} deleted.")
+                    else:
+                        async with event.client.action(event.chat_id, "typing"):
+                            await event.respond(
+                                f"Rule {rule_id} not found or not in this chat."
+                            )
+
+                elif list_match:
+                    rules = await get_all_rules_for_chat(session, event.chat_id)
+                    if not rules:
+                        async with event.client.action(event.chat_id, "typing"):
+                            await event.respond("No rules defined for this chat.")
+                        return
+
+                    rules_text = ["**Rules for this chat:**"]
+                    for rule in rules:
+                        rules_text.append(f"{rule.id}. [{rule.specifier}] {rule.text}")
+                    async with event.client.action(event.chat_id, "typing"):
+                        await event.respond("\n".join(rules_text))
+                else:
+                    async with event.client.action(event.chat_id, "typing"):
+                        await event.respond(
+                            "**Rules command help:**\n\n"
+                            "- `/rules` - Show this help\n"
+                            "- `/rules list` - List all rules\n"
+                            "- `/rules add <specifier> <text>` - Add a rule\n"
+                            "- `/rules edit <id> <text>` - Edit a rule\n"
+                            "- `/rules delete <id>` - Delete a rule"
+                        )
+
         @bot.on(events.NewMessage)
         async def handle_incoming_event(event: events.NewMessage.Event):
             if event.raw_text.startswith("/"):
@@ -308,6 +409,7 @@ async def start():
         asyncio.create_task(response_worker(bot, llmclient))
 
         await bot.run_until_disconnected()
+
 
 async def _toggle_can_respond(event: events.NewMessage.Event, can_respond=True):
     """Enable bot responses in this chat."""

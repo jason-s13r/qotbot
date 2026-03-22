@@ -40,17 +40,22 @@ GAME MECHANICS:
 
 class Classifier(Agent):
     def __init__(
-        self, client: AsyncOpenAI, bot_identity: str, chat_identity: str
+        self,
+        client: AsyncOpenAI,
+        bot_identity: str,
+        chat_identity: str,
+        rules: list[str] | None = None,
     ):
+        system_content = CLASSIFIER_PROMPT.substitute(
+            bot_identity=bot_identity, chat_identity=chat_identity
+        )
+
+        if rules:
+            rules_section = "\n\nRULES:\n" + "\n".join(f"- {rule}" for rule in rules)
+            system_content += rules_section
+
         super().__init__(
             client,
             LLM_CLASSIFIER_MODEL,
-            [
-                {
-                    "role": "system",
-                    "content": CLASSIFIER_PROMPT.substitute(
-                        bot_identity=bot_identity, chat_identity=chat_identity
-                    ),
-                }
-            ],
+            [{"role": "system", "content": system_content}],
         )

@@ -18,6 +18,13 @@ from qotbot.database.users import (
 )
 from qotbot.database.chats import set_chat_can_respond, create_or_update_chat_from_event
 from qotbot.database.models.summary import DailySummary
+from qotbot.database.rules import (
+    get_all_rules_for_chat,
+    add_rule,
+    update_rule,
+    delete_rule,
+    get_rules_by_specifier,
+)
 
 __all__ = [
     "Base",
@@ -40,4 +47,9 @@ __all__ = [
     "create_or_update_user_from_event",
     "set_chat_can_respond",
     "create_or_update_chat_from_event",
+    "get_all_rules_for_chat",
+    "add_rule",
+    "update_rule",
+    "delete_rule",
+    "get_rules_by_specifier",
 ]

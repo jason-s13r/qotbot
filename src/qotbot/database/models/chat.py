@@ -30,6 +30,7 @@ class Chat(Base):
         "Message", back_populates="chat", foreign_keys="Message.chat_id"
     )
     members = relationship("ChatMember", back_populates="chat")
+    rules = relationship("Rule", back_populates="chat", cascade="all, delete-orphan")
 
 
 class ChatMember(Base):

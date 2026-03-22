@@ -9,6 +9,7 @@ from qotbot.utils.config import (
 from qotbot.database.messages import mark_message_responded
 from qotbot.database.models.chat import Chat
 from qotbot.database.models.message import Message
+from qotbot.database.rules import get_rules_by_specifier
 from qotbot.llm.chatter import Chatter
 from qotbot.tools.date_tools import date_tool
 from qotbot.tools.lolcryption import lolcryption
@@ -29,6 +30,7 @@ from sqlalchemy import select
 
 
 logger = logging.getLogger(__name__)
+
 
 async def response_worker(bot: TelegramClient, llmclient: AsyncOpenAI):
     logger.info("worker started")
@@ -56,12 +58,13 @@ async def response_worker(bot: TelegramClient, llmclient: AsyncOpenAI):
             logger.error(e, exc_info=True)
 
         await asyncio.sleep(2)
-        
+
         elapsed_time = (datetime.now() - start_time).total_seconds()
         wait_time = max(0, RESPONSE_WAIT_TIME - elapsed_time)
 
         logger.info(f"sleeping for {wait_time} seconds...")
         await asyncio.sleep(wait_time)
+
 
 async def _fetch_batch_chat_id(previous_chat_id: int | None) -> int | None:
     fifteen_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=15)
@@ -108,7 +111,9 @@ async def _fetch_batch_messages_ids(chat_id: int) -> list[int] | None:
         return message_ids
 
 
-async def _create_response_for_chat(chat_id: int, bot: TelegramClient, llmclient: AsyncOpenAI):
+async def _create_response_for_chat(
+    chat_id: int, bot: TelegramClient, llmclient: AsyncOpenAI
+):
     message_ids = await _fetch_batch_messages_ids(chat_id)
 
     if not message_ids:
@@ -120,7 +125,12 @@ async def _create_response_for_chat(chat_id: int, bot: TelegramClient, llmclient
     )
 
     bot_identity, chat_identity = await get_identities(bot, chat_id)
-    chatter = Chatter(llmclient, bot_identity, chat_identity)
+
+    async with get_session(DATABASE_PATH) as session:
+        chatter_rules = await get_rules_by_specifier(session, chat_id, "chatter")
+        chatter_rules_text = [rule.text for rule in chatter_rules]
+
+        chatter = Chatter(llmclient, bot_identity, chat_identity, chatter_rules_text)
 
     common_prompts = await build_common_prompts(chat_id, message_ids)
 
