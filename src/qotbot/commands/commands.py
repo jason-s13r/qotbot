@@ -25,7 +25,7 @@ commands = Commands()
 @commands.slash("transcript")
 async def handle_transcript_event(event: events.NewMessage.Event):
     """Show the transcript of a message."""
-    async with get_session(DATABASE_PATH) as session:
+    async with get_session() as session:
         logger.info(f"/transcript command received from {event.sender_id}")
         if not event.reply_to:
             logger.info("No reply_to found, ignoring")
@@ -53,7 +53,7 @@ async def handle_transcript_event(event: events.NewMessage.Event):
 @commands.slash("classification")
 async def handle_classification_event(event: events.NewMessage.Event):
     """Show the classification reason of a message."""
-    async with get_session(DATABASE_PATH) as session:
+    async with get_session() as session:
         logger.info(f"/classification command received from {event.sender_id}")
         if not event.reply_to:
             logger.info("No reply_to found, ignoring")
@@ -84,7 +84,7 @@ async def handle_summary_event(event: events.NewMessage.Event):
     bot_identity, chat_identity = await get_identities(event.client, event.chat_id)
     prompts = []
 
-    async with get_session(DATABASE_PATH) as session:
+    async with get_session() as session:
         chat = await session.get(Chat, event.chat_id)
 
         if not chat:
@@ -114,7 +114,7 @@ async def handle_summary_event(event: events.NewMessage.Event):
 
     logger.info(f"Summary generated ({len(summary) if summary else 0} characters)")
 
-    async with get_session(DATABASE_PATH) as session:
+    async with get_session() as session:
         chat = await session.get(Chat, event.chat_id)
 
         if not chat:

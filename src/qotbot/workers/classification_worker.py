@@ -37,7 +37,7 @@ async def _classify_message(
     chat_id: int, message_id: int, bot: TelegramClient, llmclient: AsyncOpenAI
 ):
     logger.info(f"Classification worker processing: chat={chat_id}, msg={message_id}")
-    async with get_session(DATABASE_PATH) as session:
+    async with get_session() as session:
         chat = await session.get(Chat, chat_id)
         if not chat:
             logger.info(
@@ -58,7 +58,7 @@ async def _classify_message(
 
     bot_identity, chat_identity = await get_identities(bot, chat_id)
 
-    async with get_session(DATABASE_PATH) as session:
+    async with get_session() as session:
         classifier_rules = await get_rules_by_specifier(session, chat_id, "classifier")
         classifier_rules_text = [rule.text for rule in classifier_rules]
 

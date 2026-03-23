@@ -30,7 +30,7 @@ async def handle_rules_event(event: events.NewMessage.Event, payload: str = None
     delete_match = re.match(r"^delete\s+(\d+)$", payload or "")
     list_match = re.match(r"^list$", payload or "")
 
-    async with get_session(DATABASE_PATH) as session:
+    async with get_session() as session:
         if add_match:
             specifier = add_match.group(1)
             rule_text = add_match.group(2)

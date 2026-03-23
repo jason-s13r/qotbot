@@ -5,9 +5,27 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import declarative_base
 import logging
 
+from qotbot.utils.config import DATABASE_PATH, LOGS_DB_PATH
+
 logger = logging.getLogger(__name__)
 
 Base = declarative_base()
+
+_main_db_engine = None
+_main_db_async_session = None
+_log_db_engine = None
+_log_db_async_session = None
+
+
+def _create_async_engine(db_path: Path):
+    return create_async_engine(
+        f"sqlite+aiosqlite:///{db_path}",
+        echo=False,
+    )
+
+
+def _create_db_session(engine):
+    return async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
 def _sync_database_schema_sync(database_path):
@@ -73,19 +91,42 @@ async def init_db(database_path):
     return async_session
 
 
+def get_database():
+    """Get or create the main database engine and session factory."""
+    global _main_db_engine, _main_db_async_session
+    if _main_db_engine is None:
+        _main_db_engine = _create_async_engine(DATABASE_PATH)
+        _main_db_async_session = _create_db_session(_main_db_engine)
+    return _main_db_async_session
+
+
+def get_log_database():
+    """Get or create the log database engine and session factory."""
+    global _log_db_engine, _log_db_async_session
+    if _log_db_engine is None:
+        _log_db_engine = _create_async_engine(LOGS_DB_PATH)
+        _log_db_async_session = _create_db_session(_log_db_engine)
+    return _log_db_async_session
+
+
 @asynccontextmanager
-async def get_session(database_path):
-    database_path = Path(database_path)
-    database_path.parent.mkdir(parents=True, exist_ok=True)
+async def get_log_session():
+    """Get a database session. Uses cached engine if database_path is None."""
+    async_session = get_log_database()
 
-    engine = create_async_engine(
-        f"sqlite+aiosqlite:///{database_path}",
-        echo=False,
-    )
+    async with async_session() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
 
-    async_session = async_sessionmaker(
-        engine, expire_on_commit=False, class_=AsyncSession
-    )
+
+@asynccontextmanager
+async def get_session():
+    """Get a database session. Uses cached engine if database_path is None."""
+    async_session = get_database()
     async with async_session() as session:
         try:
             yield session

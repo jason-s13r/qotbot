@@ -34,13 +34,13 @@ class ClassificationProvider(Provider):
     async def _approve_message(self, reason: str):
         logger.info(f"classification approved: {reason}")
 
-        async with get_session(DATABASE_PATH) as session:
+        async with get_session() as session:
             await store_message_classification(
                 session,
                 self.message_id,
                 self.chat_id,
                 f"classification approved: {reason}",
-                is_approved=True
+                is_approved=True,
             )
             await session.commit()
 
@@ -54,13 +54,13 @@ class ClassificationProvider(Provider):
         logger.info(
             f"Classification rejected for chat={self.chat_id}, msg={self.message_id}: {reason}"
         )
-        async with get_session(DATABASE_PATH) as session:
+        async with get_session() as session:
             await store_message_classification(
                 session,
                 self.message_id,
                 self.chat_id,
                 f"classification rejected: {reason}",
-                is_approved=False
+                is_approved=False,
             )
 
             await mark_message_skipped(session, self.chat_id, self.message_id, reason)

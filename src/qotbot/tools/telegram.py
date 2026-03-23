@@ -272,7 +272,7 @@ class TelegramProvider(Provider):
 
     async def _store_sent_message(self, message):
         """Store a message that was sent by the bot (not from an event)."""
-        async with get_session(DATABASE_PATH) as session:
+        async with get_session() as session:
             await store_sent_message(session, message, self.chat_id)
 
     def _decode_pickle(self, item: ResourceContent) -> Any:

@@ -30,7 +30,7 @@ async def get_bot_identity(bot: TelegramClient):
 
 
 async def get_chat_identity(chat_id: int):
-    async with get_session(DATABASE_PATH) as session:
+    async with get_session() as session:
         chat = await session.get(Chat, chat_id)
 
         if not chat:

@@ -3,5 +3,6 @@ from qotbot.database.models.chat import Chat, ChatMember
 from qotbot.database.models.message import Message
 from qotbot.database.models.summary import DailySummary
 from qotbot.database.models.rule import Rule
+from qotbot.database.models.log import Log
 
-__all__ = ["User", "Chat", "ChatMember", "Message", "DailySummary", "Rule"]
+__all__ = ["User", "Chat", "ChatMember", "Message", "DailySummary", "Rule", "Log"]

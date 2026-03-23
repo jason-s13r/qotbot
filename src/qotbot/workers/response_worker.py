@@ -2,7 +2,6 @@ from telethon import TelegramClient
 
 from qotbot.database.database import get_session
 from qotbot.utils.config import (
-    DATABASE_PATH,
     MAX_BATCH_SIZE,
     RESPONSE_WAIT_TIME,
 )
@@ -13,6 +12,7 @@ from qotbot.database.rules import get_rules_by_specifier
 from qotbot.llm.chatter import Chatter
 from qotbot.tools.date_tools import date_tool
 from qotbot.tools.lolcryption import lolcryption
+from qotbot.tools.logs_tools import log_tools
 from qotbot.tools.telegram import TelegramProvider
 from qotbot.tools.web_tools import web_tools
 from qotbot.utils.build_common_prompts import build_common_prompts
@@ -68,7 +68,7 @@ async def response_worker(bot: TelegramClient, llmclient: AsyncOpenAI):
 
 async def _fetch_batch_chat_id(previous_chat_id: int | None) -> int | None:
     fifteen_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=15)
-    async with get_session(DATABASE_PATH) as session:
+    async with get_session() as session:
         result = await session.execute(
             select(Message.chat_id)
             .join(Chat, Chat.id == Message.chat_id)
@@ -88,7 +88,7 @@ async def _fetch_batch_chat_id(previous_chat_id: int | None) -> int | None:
 
 async def _fetch_batch_messages_ids(chat_id: int) -> list[int] | None:
     fifteen_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=15)
-    async with get_session(DATABASE_PATH) as session:
+    async with get_session() as session:
         chat = await session.get(Chat, chat_id)
         if not chat or not chat.can_respond:
             logger.info(f"Chat {chat_id} does not allow responses")
@@ -126,7 +126,7 @@ async def _create_response_for_chat(
 
     bot_identity, chat_identity = await get_identities(bot, chat_id)
 
-    async with get_session(DATABASE_PATH) as session:
+    async with get_session() as session:
         chatter_rules = await get_rules_by_specifier(session, chat_id, "chatter")
         chatter_rules_text = [rule.text for rule in chatter_rules]
 
@@ -136,6 +136,7 @@ async def _create_response_for_chat(
 
     telegram_provider = TelegramProvider(bot, chat_id)
     chat_tools = FastMCP("tools", providers=[telegram_provider])
+    chat_tools.mount(log_tools)
     chat_tools.mount(web_tools)
     chat_tools.mount(lolcryption)
     chat_tools.mount(date_tool)
@@ -147,7 +148,7 @@ async def _create_response_for_chat(
 
     logger.info(f"Chatter logs: {chatter_logs[:100] if chatter_logs else 'None'}")
 
-    async with get_session(DATABASE_PATH) as session:
+    async with get_session() as session:
         for msg_id in message_ids:
             await mark_message_responded(session, chat_id, msg_id)
         await session.commit()

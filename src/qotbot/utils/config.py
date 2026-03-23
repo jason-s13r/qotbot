@@ -17,6 +17,7 @@ WHISPER_LANGUAGE = os.getenv("WHISPER_LANGUAGE", None)
 # Data paths
 DATA_PATH = Path(os.getenv("DATA_PATH", "./data"))
 DATABASE_PATH = DATA_PATH / "database.db"
+LOGS_DB_PATH = DATA_PATH / "logs.db"
 LOG_PATH = DATA_PATH / "logs"
 
 # Telegram

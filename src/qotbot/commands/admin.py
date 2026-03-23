@@ -25,7 +25,7 @@ async def handle_enable(event: events.NewMessage.Event):
 
 async def _toggle_can_respond(event: events.NewMessage.Event, can_respond=True):
     """Enable bot responses in this chat."""
-    async with get_session(DATABASE_PATH) as session:
+    async with get_session() as session:
         chat = await set_chat_can_respond(session, event, can_respond)
         async with event.client.action(event.chat_id, "typing"):
             await event.respond(

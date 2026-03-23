@@ -2,8 +2,6 @@ import asyncio
 import logging
 import os
 
-from datetime import datetime, timezone
-
 from openai import AsyncOpenAI
 from telethon import TelegramClient, events
 
@@ -19,15 +17,18 @@ from qotbot.utils.command import Commands
 from qotbot.utils.config import (
     DATA_PATH,
     DATABASE_PATH,
+    LOGS_DB_PATH,
     LOG_PATH,
     MAX_TRANSCRIPT_DURATION,
 )
+from qotbot.utils.sqlite_handler import SQLiteHandler
 from qotbot.utils.media import download_media_base64
 from qotbot.workers.audio_worker import audio_worker, put_audio
 from qotbot.workers.classification_worker import (
     classification_worker,
     put_classification,
 )
+
 from qotbot.workers.image_worker import image_worker, put_image
 from qotbot.workers.response_worker import response_worker
 from qotbot.commands.system import system
@@ -45,9 +46,10 @@ LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 
 DATA_PATH.mkdir(parents=True, exist_ok=True)
 LOG_PATH.mkdir(parents=True, exist_ok=True)
+LOGS_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="[%(asctime)s][%(levelname)s][%(name)s:%(lineno)s %(funcName)s()] %(message)s",
     handlers=[
         logging.handlers.TimedRotatingFileHandler(
@@ -56,16 +58,33 @@ logging.basicConfig(
         logging.StreamHandler(),
     ],
 )
+
+logging.getLogger("telethon").setLevel(logging.INFO)
+logging.getLogger("openai").setLevel(logging.INFO)
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
+logging.getLogger("aiosqlite").setLevel(logging.INFO)
+logging.getLogger("asyncio").setLevel(logging.INFO)
+logging.getLogger("httpx").setLevel(logging.INFO)
+logging.getLogger("httpcore").setLevel(logging.INFO)
+logging.getLogger("fastmcp").setLevel(logging.INFO)
+logging.getLogger("aiohttp").setLevel(logging.INFO)
+logging.getLogger("librosa").setLevel(logging.INFO)
+logging.getLogger("whisper").setLevel(logging.INFO)
+logging.getLogger("ffmpeg").setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 async def start():
+    loop = asyncio.get_event_loop()
     logger.info("Initialising database:")
     await init_db(DATABASE_PATH)
+    logger.info("Initialising logs database:")
+    await init_db(LOGS_DB_PATH)
+    logger.addHandler(SQLiteHandler())
 
     logger.info("Connecting to Telegram:")
 
-    loop = asyncio.get_event_loop()
     bot = TelegramClient(DATA_PATH / "telegram", API_ID, API_HASH, loop=loop)
     llmclient = AsyncOpenAI(base_url=LLM_API_URL, api_key=LLM_API_KEY)
 
@@ -84,7 +103,7 @@ async def start():
 
         await cmd.use(commands).use(system).use(admin).use(rules).register(bot)
 
-        async with get_session(DATABASE_PATH) as session:
+        async with get_session() as session:
             await create_or_update_bot_user(session, bot)
 
         @bot.on(events.NewMessage)
@@ -96,7 +115,7 @@ async def start():
                 f"NEW MESSAGE: chat_id={event.chat_id}, message_id={event.id}, sender_id={event.sender_id}: {event.raw_text}"
             )
 
-            async with get_session(DATABASE_PATH) as session:
+            async with get_session() as session:
                 await create_or_update_chat_from_event(session, event)
                 await create_or_update_user_from_event(session, event)
                 await store_message_from_event(session, event)
@@ -108,10 +127,6 @@ async def start():
             has_image = event.photo is not None or event.sticker is not None
             has_audio = event.audio is not None or event.voice is not None
             has_video = event.video_note is not None or event.video is not None
-
-            message_age_minutes = (
-                datetime.now(timezone.utc) - event.message.date
-            ).total_seconds() / 60
 
             if has_audio or has_video:
                 if event.file.duration > MAX_TRANSCRIPT_DURATION:

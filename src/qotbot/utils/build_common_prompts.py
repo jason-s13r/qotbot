@@ -30,7 +30,7 @@ async def build_common_prompts(
     message_ids: list[int],
     max_recent_messages: int = 50,
 ) -> list[dict]:
-    async with get_session(DATABASE_PATH) as session:
+    async with get_session() as session:
         result = await session.execute(
             select(Message)
             .filter(Message.chat_id == chat_id, Message.id.in_(message_ids))

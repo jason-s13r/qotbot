@@ -46,7 +46,7 @@ async def _process_audio_item(item: AudioTask):
     if not transcription:
         transcription = "No transcription generated"
 
-    async with get_session(DATABASE_PATH) as session:
+    async with get_session() as session:
         await store_audio_transcription(
             session, item.message_id, item.chat_id, transcription
         )
@@ -55,6 +55,7 @@ async def _process_audio_item(item: AudioTask):
     logger.info(f"Audio transcription stored for message {item.message_id}")
 
     put_classification(item.chat_id, item.message_id)
+
 
 async def audio_worker():
     logger.info("Audio worker started")

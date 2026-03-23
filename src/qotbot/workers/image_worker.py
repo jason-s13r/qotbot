@@ -70,7 +70,7 @@ async def image_worker(bot: TelegramClient, llmclient):
             if not description:
                 description = "No description generated"
 
-            async with get_session(DATABASE_PATH) as session:
+            async with get_session() as session:
                 await store_image_description(session, message_id, chat_id, description)
                 await session.commit()
 
