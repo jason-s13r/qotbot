@@ -1,42 +1,27 @@
 import asyncio
 import logging
 import os
-import re
 
 from datetime import datetime, timezone
 
 from openai import AsyncOpenAI
 from telethon import TelegramClient, events
-from telethon.tl.functions.channels import LeaveChannelRequest
 
-from qotbot.database.rules import (
-    add_rule,
-    delete_rule,
-    get_all_rules_for_chat,
-    update_rule,
-)
-from qotbot.utils.command import Command
 from qotbot.database import (
     init_db,
     get_session,
     store_message_from_event,
-    get_recent_messages,
     create_or_update_bot_user,
     create_or_update_user_from_event,
-    set_chat_can_respond,
     create_or_update_chat_from_event,
 )
-from qotbot.database.models.chat import Chat
-from qotbot.database.models.message import Message
-from qotbot.llm.summariser import Summariser
-from qotbot.utils.build_common_prompts import format_messages_for_prompt
+from qotbot.utils.command import Commands
 from qotbot.utils.config import (
     DATA_PATH,
     DATABASE_PATH,
     LOG_PATH,
     MAX_TRANSCRIPT_DURATION,
 )
-from qotbot.utils.get_identities import get_identities
 from qotbot.utils.media import download_media_base64
 from qotbot.workers.audio_worker import audio_worker, put_audio
 from qotbot.workers.classification_worker import (
@@ -45,6 +30,10 @@ from qotbot.workers.classification_worker import (
 )
 from qotbot.workers.image_worker import image_worker, put_image
 from qotbot.workers.response_worker import response_worker
+from qotbot.commands.system import system
+from qotbot.commands.admin import admin
+from qotbot.commands.commands import commands
+from qotbot.commands.rules import rules
 
 
 API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
@@ -84,266 +73,19 @@ async def start():
         await bot.start(bot_token=BOT_TOKEN)
 
     async with bot:
-        commands = Command(bot, await bot.get_me())
-        async with get_session(DATABASE_PATH) as session:
-            await create_or_update_bot_user(session, bot)
+        cmd = Commands()
 
-        @commands.slash("help")
+        @cmd.slash("help")
         async def handle_help(event: events.NewMessage.Event, payload: str = None):
             """Show this help message."""
             async with event.client.action(event.chat_id, "typing"):
-                message = await commands.build_help_message()
+                message = await cmd.build_help_message()
                 await event.respond(message)
 
-        @commands.slash("bye", commands.Permissions(bot_owner=True, is_scoped=True))
-        async def handle_bye_event(event: events.NewMessage.Event, payload: str = None):
-            """Leave the chat."""
-            try:
-                input_chat = await event.get_input_chat()
-                if input_chat:
-                    await bot(LeaveChannelRequest(input_chat))
-            except Exception as e:
-                logger.error(f"Error leaving chat: {e}", exc_info=True)
-                async with event.client.action(event.chat_id, "typing"):
-                    await event.respond(f"Error leaving chat: {e}")
+        await cmd.use(commands).use(system).use(admin).use(rules).register(bot)
 
-        @commands.slash(
-            "disconnect", commands.Permissions(bot_owner=True, is_scoped=True)
-        )
-        async def handle_disconnect_event(
-            event: events.NewMessage.Event, payload: str = None
-        ):
-            """Disconnect the bot."""
-            await bot.disconnect()
-
-        @commands.slash(
-            "disable", commands.Permissions(chat_admin=True, is_scoped=True)
-        )
-        async def handle_disable(event: events.NewMessage.Event, payload: str = None):
-            """Disable bot responses in this chat."""
-            await _toggle_can_respond(event, False)
-
-        @commands.slash("enable", commands.Permissions(chat_admin=True, is_scoped=True))
-        async def handle_enable(event: events.NewMessage.Event, payload: str = None):
-            """Enable bot responses in this chat."""
-            await _toggle_can_respond(event, True)
-
-        @commands.slash("transcript")
-        async def handle_transcript_event(
-            event: events.NewMessage.Event, payload: str = None
-        ):
-            """Show the transcript of a message."""
-            async with get_session(DATABASE_PATH) as session:
-                logger.info(f"/transcript command received from {event.sender_id}")
-                if not event.reply_to:
-                    logger.info("No reply_to found, ignoring")
-                    return
-
-                async with event.client.action(event.chat_id, "typing"):
-                    msg_id = event.reply_to.reply_to_msg_id
-                    logger.info(
-                        f"Looking up message id {msg_id} in chat {event.chat_id}"
-                    )
-
-                    message = await session.get(Message, (event.chat_id, msg_id))
-
-                    if not message:
-                        logger.warning(f"Message {msg_id} not found in database")
-                        return
-
-                    if message.audio_transcription:
-                        logger.info(f"Sending audio transcription for message {msg_id}")
-                        await event.reply(
-                            f"Audio transcription: {message.audio_transcription}"
-                        )
-
-                    if message.image_description:
-                        logger.info(f"Sending image description for message {msg_id}")
-                        await event.reply(
-                            f"Image description: {message.image_description}"
-                        )
-
-        @commands.slash("classification")
-        async def handle_classification_event(
-            event: events.NewMessage.Event, payload: str = None
-        ):
-            """Show the classification reason of a message."""
-            async with get_session(DATABASE_PATH) as session:
-                logger.info(f"/classification command received from {event.sender_id}")
-                if not event.reply_to:
-                    logger.info("No reply_to found, ignoring")
-                    return
-
-                async with event.client.action(event.chat_id, "typing"):
-                    msg_id = event.reply_to.reply_to_msg_id
-                    logger.info(
-                        f"Looking up message id {msg_id} in chat {event.chat_id}"
-                    )
-
-                    message = await session.get(Message, (event.chat_id, msg_id))
-
-                    if not message:
-                        logger.warning(f"Message {msg_id} not found in database")
-                        return
-
-                    if message.classification_reason:
-                        logger.info(
-                            f"Sending classification reason for message {msg_id}"
-                        )
-                        await event.reply(message.classification_reason)
-
-        @commands.slash("summary")
-        async def handle_summary_event(
-            event: events.NewMessage.Event, payload: str = None
-        ):
-            """Show the summary of the chat."""
-            logger.info(
-                f"/summary command received from {event.sender_id} in chat {event.chat_id}"
-            )
-
-            bot_identity, chat_identity = await get_identities(bot, event.chat_id)
-            prompts = []
-
-            async with get_session(DATABASE_PATH) as session:
-                chat = await session.get(Chat, event.chat_id)
-
-                if not chat:
-                    logger.warning(f"Chat {event.chat_id} not found in database")
-                    return
-
-                prior_summary = chat.overall_summary
-
-                messages = await get_recent_messages(session, event.chat_id, limit=1000)
-                logger.info(
-                    f"Summarising {len(messages)} messages from chat {event.chat_id}"
-                )
-                transcript = format_messages_for_prompt(messages)
-
-                prompts = [
-                    {
-                        "role": "user",
-                        "content": f"<summary>\n{prior_summary}\n</summary>\n<transcript>{transcript}</transcript>",
-                    }
-                ]
-
-            summariser_instance = Summariser(llmclient, bot_identity, chat_identity)
-            logger.info("Invoking summariser LLM")
-
-            summary: str = ""
-            async with event.client.action(event.chat_id, "typing"):
-                summary = await summariser_instance.invoke(
-                    prompts, max_completion_tokens=10000
-                )
-                summary = summary or ""
-
-            logger.info(
-                f"Summary generated ({len(summary) if summary else 0} characters)"
-            )
-
-            async with get_session(DATABASE_PATH) as session:
-                chat = await session.get(Chat, event.chat_id)
-
-                if not chat:
-                    logger.warning(
-                        f"Chat {event.chat_id} not found when saving summary"
-                    )
-                    return
-
-                chat.overall_summary = summary or ""
-                session.add(chat)
-                logger.info("Summary saved to database")
-
-            if not summary:
-                return
-
-            express = summary.split("----")[0].strip("#")[:1000]
-            msg = await event.reply(express)
-            async with event.client.action(event.chat_id, "document"):
-                file = await event.client.upload_file(
-                    summary.encode("utf-8"), file_name="summary.md"
-                )
-                await msg.reply(file=file)
-
-        @commands.slash("rules", commands.Permissions(chat_admin=True, is_scoped=True))
-        async def handle_rules_event(
-            event: events.NewMessage.Event, payload: str = None
-        ):
-            """Manage chat rules for LLM behavior."""
-            logger.info(
-                f"/rules command received from {event.sender_id} in chat {event.chat_id}"
-            )
-
-            VALID_SPECIFIERS = {"chatter", "classifier"}
-            add_match = re.match(r"^add\s+(\S+)\s+(.+)$", payload or "")
-            edit_match = re.match(r"^edit\s+(\d+)\s+(.+)$", payload or "")
-            delete_match = re.match(r"^delete\s+(\d+)$", payload or "")
-            list_match = re.match(r"^list$", payload or "")
-
-            async with get_session(DATABASE_PATH) as session:
-                if add_match:
-                    specifier = add_match.group(1)
-                    rule_text = add_match.group(2)
-                    if specifier not in VALID_SPECIFIERS:
-                        async with event.client.action(event.chat_id, "typing"):
-                            await event.respond(
-                                f"Invalid specifier '{specifier}'. Valid specifiers: {', '.join(VALID_SPECIFIERS)}"
-                            )
-                        return
-                    rule = await add_rule(session, event.chat_id, specifier, rule_text)
-                    async with event.client.action(event.chat_id, "typing"):
-                        await event.respond(
-                            f"Rule added (ID: {rule.id}): [{rule.specifier}] {rule.text}"
-                        )
-
-                elif edit_match:
-                    rule_id = int(edit_match.group(1))
-                    rule_text = edit_match.group(2)
-                    rule = await update_rule(session, event.chat_id, rule_id, rule_text)
-                    if rule:
-                        async with event.client.action(event.chat_id, "typing"):
-                            await event.respond(
-                                f"Rule updated (ID: {rule.id}): [{rule.specifier}] {rule.text}"
-                            )
-                    else:
-                        async with event.client.action(event.chat_id, "typing"):
-                            await event.respond(
-                                f"Rule {rule_id} not found or not in this chat."
-                            )
-
-                elif delete_match:
-                    rule_id = int(delete_match.group(1))
-                    deleted = await delete_rule(session, event.chat_id, rule_id)
-                    if deleted:
-                        async with event.client.action(event.chat_id, "typing"):
-                            await event.respond(f"Rule {rule_id} deleted.")
-                    else:
-                        async with event.client.action(event.chat_id, "typing"):
-                            await event.respond(
-                                f"Rule {rule_id} not found or not in this chat."
-                            )
-
-                elif list_match:
-                    rules = await get_all_rules_for_chat(session, event.chat_id)
-                    if not rules:
-                        async with event.client.action(event.chat_id, "typing"):
-                            await event.respond("No rules defined for this chat.")
-                        return
-
-                    rules_text = ["**Rules for this chat:**"]
-                    for rule in rules:
-                        rules_text.append(f"{rule.id}. [{rule.specifier}] {rule.text}")
-                    async with event.client.action(event.chat_id, "typing"):
-                        await event.respond("\n".join(rules_text))
-                else:
-                    async with event.client.action(event.chat_id, "typing"):
-                        await event.respond(
-                            "**Rules command help:**\n\n"
-                            "- `/rules` - Show this help\n"
-                            "- `/rules list` - List all rules\n"
-                            "- `/rules add <specifier> <text>` - Add a rule\n"
-                            "- `/rules edit <id> <text>` - Edit a rule\n"
-                            "- `/rules delete <id>` - Delete a rule"
-                        )
+        async with get_session(DATABASE_PATH) as session:
+            await create_or_update_bot_user(session, bot)
 
         @bot.on(events.NewMessage)
         async def handle_incoming_event(event: events.NewMessage.Event):
@@ -409,16 +151,6 @@ async def start():
         asyncio.create_task(response_worker(bot, llmclient))
 
         await bot.run_until_disconnected()
-
-
-async def _toggle_can_respond(event: events.NewMessage.Event, can_respond=True):
-    """Enable bot responses in this chat."""
-    async with get_session(DATABASE_PATH) as session:
-        chat = await set_chat_can_respond(session, event, can_respond)
-        async with event.client.action(event.chat_id, "typing"):
-            await event.respond(
-                f"Bot responding {'enabled' if chat.can_respond else 'disabled'} for this chat"
-            )
 
 
 def main():

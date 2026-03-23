@@ -1,13 +1,15 @@
 from dataclasses import dataclass
+import inspect
 import logging
 import functools
+from typing import List, Tuple
 from telethon import TelegramClient, events, types
 from qotbot.utils.config import TELEGRAM_BOT_OWNER
 
 logger = logging.getLogger(__name__)
 
 
-class Command:
+class Commands:
     @dataclass
     class Permissions:
         chat_admin: bool = False
@@ -19,13 +21,31 @@ class Command:
     class CommandInfo:
         prefix: str
         command: str
-        permissions: "Command.Permissions"
+        permissions: "Commands.Permissions"
         description: str | None
 
-    def __init__(self, client: TelegramClient, me: types.User | None = None):
-        self._client: TelegramClient = client
-        self._me: types.User | None = me
-        self._commands = []
+    def __init__(self, client: TelegramClient | None = None):
+        self._client = client
+        self._commands: List[Commands.CommandInfo] = []
+        self._me: types.User | None = None
+        self._registry: List[Tuple[events.NewMessage, callable]] = []
+        self._registries: List["Commands"] = []
+
+    def use(self, other: "Commands") -> "Commands":
+        self._registries.append(other)
+        return self
+
+    async def register(self, client: TelegramClient, me: types.User | None = None):
+        self._client = client
+        self._me = me
+        if not me:
+            self._me = await client.get_me()
+
+        for event, handler in self._registry:
+            self._client.add_event_handler(handler, event)
+
+        for registry in self._registries:
+            await registry.register(client, self._me)
 
     def slash(self, command: str, permissions: Permissions = Permissions()):
         return self._command("/", command, permissions)
@@ -37,6 +57,9 @@ class Command:
         """Decorator for command handlers with permission and scoping checks."""
 
         def decorator(func):
+            sig = inspect.signature(func)
+            wants_payload = len(sig.parameters) >= 2
+
             @functools.wraps(func)
             async def wrapper(event: events.NewMessage.Event):
                 username = event.pattern_match.group(1)
@@ -62,23 +85,33 @@ class Command:
                     if not await self._message_is_reply_to_bot(event):
                         return
 
-                return await func(event, payload)
+                if wants_payload:
+                    return await func(event, payload)
+                return await func(event)
 
             pattern = rf"(?i)^{prefix}{command}(?:@(\w+))?(?:\s+(.*))?$"
-            self._client.add_event_handler(wrapper, events.NewMessage(pattern=pattern))
             self._commands.append(
-                Command.CommandInfo(prefix, command, permissions, func.__doc__)
+                Commands.CommandInfo(prefix, command, permissions, func.__doc__)
             )
+            self._registry.append((events.NewMessage(pattern=pattern), wrapper))
 
             return wrapper
 
         return decorator
 
+    def command_info(self):
+        info = []
+        info.extend(self._commands)
+        for reg in self._registries:
+            nested = reg.command_info()
+            info.extend(nested)
+        return info
+
     async def build_help_message(self):
         if not self._me:
             self._me = await self._client.get_me()
 
-        def _command_help(grouping: list[Command.CommandInfo]) -> list[str]:
+        def _command_help(grouping: list[Commands.CommandInfo]) -> list[str]:
             help_list = []
             for info in grouping:
                 scoped = f"@{self._me.username}" if info.permissions.is_scoped else ""
@@ -91,7 +124,8 @@ class Command:
                 )
             return help_list
 
-        commands = sorted(self._commands, key=lambda x: x.prefix + x.command)
+        info = self.command_info()
+        commands = sorted(info, key=lambda x: x.prefix + x.command)
         owner_commands = list(filter(lambda x: x.permissions.bot_owner, commands))
         admin_commands = list(filter(lambda x: x.permissions.chat_admin, commands))
         public_commands = list(
