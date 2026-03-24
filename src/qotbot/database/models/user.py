@@ -19,3 +19,9 @@ class User(Base):
         "Message", back_populates="sender", foreign_keys="Message.sender_id"
     )
     chats = relationship("ChatMember", back_populates="user")
+    owned_todo_lists = relationship(
+        "TodoList", back_populates="owner", foreign_keys="TodoList.owner_id"
+    )
+    created_todo_items = relationship(
+        "TodoListItem", back_populates="creator", foreign_keys="TodoListItem.created_by"
+    )

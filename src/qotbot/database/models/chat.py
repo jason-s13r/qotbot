@@ -31,6 +31,7 @@ class Chat(Base):
     )
     members = relationship("ChatMember", back_populates="chat")
     rules = relationship("Rule", back_populates="chat", cascade="all, delete-orphan")
+    todo_lists = relationship("TodoList", back_populates="chat")
 
 
 class ChatMember(Base):
@@ -39,6 +40,7 @@ class ChatMember(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
     chat_id = Column(BigInteger, ForeignKey("chats.id"), nullable=False)
+    is_admin = Column(Boolean, default=False, nullable=False)
     joined_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="chats")
