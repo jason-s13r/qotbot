@@ -16,6 +16,7 @@ from qotbot.tools.logs_tools import log_tools
 from qotbot.tools.todo_tools import todo_tools
 from qotbot.tools.telegram import TelegramProvider
 from qotbot.tools.web_tools import web_tools
+from qotbot.tools.woolworths import woolworths_tools
 from qotbot.utils.build_common_prompts import build_common_prompts
 from qotbot.utils.get_identities import get_identities
 from fastmcp.server.transforms import ResourcesAsTools
@@ -151,6 +152,7 @@ async def _create_response_for_chat(
     chat_tools.mount(lolcryption)
     chat_tools.mount(date_tool)
     chat_tools.mount(todo_tools)
+    chat_tools.mount(woolworths_tools)
     chat_tools.add_transform(ResourcesAsTools(chat_tools))
 
     logger.info(f"Invoking Chatter for chat {chat_id}, messages {message_ids}")
