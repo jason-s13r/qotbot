@@ -15,9 +15,10 @@ async def handle_bye_event(event: events.NewMessage.Event):
     try:
         input_chat = await event.get_input_chat()
         if input_chat:
+            logger.info(f"Bot leaving chat_id={event.chat_id}")
             await event.client(LeaveChannelRequest(input_chat))
     except Exception as e:
-        logger.error(f"Error leaving chat: {e}", exc_info=True)
+        logger.error(f"Error leaving chat_id={event.chat_id}: {e}", exc_info=True)
         async with event.client.action(event.chat_id, "typing"):
             await event.respond(f"Error leaving chat: {e}")
 

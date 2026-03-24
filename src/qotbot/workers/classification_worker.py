@@ -30,25 +30,29 @@ classification_queue: asyncio.Queue[ClassificationTask] = asyncio.Queue()
 
 def put_classification(chat_id: int, message_id: int):
     classification_queue.put_nowait(ClassificationTask(chat_id, message_id))
-    logger.debug(f"Classification queued: chat={chat_id}, msg={message_id}")
+    logger.debug(
+        f"Classification task queued: chat_id={chat_id}, message_id={message_id}"
+    )
 
 
 async def _classify_message(
     chat_id: int, message_id: int, bot: TelegramClient, llmclient: AsyncOpenAI
 ):
-    logger.info(f"Classification worker processing: chat={chat_id}, msg={message_id}")
+    logger.debug(
+        f"Processing classification for chat_id={chat_id}, message_id={message_id}"
+    )
     async with get_session() as session:
         chat = await session.get(Chat, chat_id)
         if not chat:
-            logger.info(
-                f"Skipping message {message_id} in chat {chat_id} - chat not found"
+            logger.warning(
+                f"Chat {chat_id} not found, marking message {message_id} as skipped"
             )
             await mark_message_skipped(session, chat_id, message_id, "chat not found")
             await session.commit()
             return
         if not chat.can_respond:
-            logger.info(
-                f"Skipping message {message_id} in chat {chat_id} - responses not allowed"
+            logger.debug(
+                f"Chat {chat_id} has can_respond=False, marking message {message_id} as skipped"
             )
             await mark_message_skipped(
                 session, chat_id, message_id, "responses not allowed in chat."
@@ -67,25 +71,28 @@ async def _classify_message(
         )
     common_prompts = await build_common_prompts(chat_id, [message_id])
 
-    logger.info(f"Creating FastMCP and classification tools")
+    logger.debug(f"Initialising classification tools for message {message_id}")
     classification_tools = FastMCP(
         "classifier",
         providers=[ClassificationProvider(message_id, chat_id)],
     )
 
-    logger.info(f"Invoking classifier")
+    logger.info(f"Invoking classifier for chat_id={chat_id}, message_id={message_id}")
     classifier_log = await classifier.invoke(common_prompts, classification_tools)
-    logger.info(
-        f"Classifier result: {classifier_log[:100] if classifier_log else 'None'}"
+    logger.debug(
+        f"Classification complete: {classifier_log[:100] if classifier_log else 'None'}"
     )
 
 
 async def classification_worker(bot, llmclient):
-    logger.info("worker started")
+    logger.info("Classification worker started")
 
     while True:
         try:
             item = await asyncio.wait_for(classification_queue.get(), timeout=1.0)
+            logger.debug(
+                f"Dequeued classification task: chat_id={item.chat_id}, message_id={item.message_id}"
+            )
         except asyncio.TimeoutError:
             await asyncio.sleep(0.1)
             continue
@@ -94,4 +101,7 @@ async def classification_worker(bot, llmclient):
             await _classify_message(item.chat_id, item.message_id, bot, llmclient)
 
         except Exception as e:
-            logger.error(f"Classification worker error: {e}", exc_info=True)
+            logger.error(
+                f"Classification worker error for chat_id={item.chat_id}, message_id={item.message_id}: {e}",
+                exc_info=True,
+            )

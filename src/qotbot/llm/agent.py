@@ -67,26 +67,33 @@ class Agent:
 
         try:
             result = await tools.call_tool(name, args)
-            logger.info(
-                "Tool Call: [%s] %s args: %s\nRESULT: %s",
+            logger.debug(
+                "Tool call [%s]: %s(args=%s) -> %s",
                 tool_call.id,
                 name,
                 str(args)[:200],
                 str(result)[:200],
             )
             content_text = _extract_tool_result_text(result)
-            return {"role": "tool", "tool_call_id": tool_call.id, "content": content_text}
+            return {
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": content_text,
+            }
         except Exception as e:
             logger.error(
-                "Tool Error: [%s] %s args: %s - %s",
+                "Tool execution error [%s]: %s(args=%s) - %s",
                 tool_call.id,
                 name,
                 args,
                 e,
                 exc_info=True,
             )
-            return {"role": "tool", "tool_call_id": tool_call.id, "content": f"ERROR: {str(e)}"}
-        
+            return {
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": f"ERROR: {str(e)}",
+            }
 
     async def _invoke(
         self,
@@ -104,13 +111,13 @@ class Agent:
         )
 
         if response is None:
-            logger.warning("No response from LLM")
+            logger.warning("LLM returned no response")
             return "EMPTY"
 
         message = response.choices[0].message
 
         if not message.tool_calls:
-            logger.info("LLM response: (no tools) %s", message.content)
+            logger.debug("LLM response (no tool calls): %s", message.content)
             return message.content or "EMPTY"
 
         messages.append(message)
@@ -127,15 +134,21 @@ class Agent:
         prompts: list[dict[str, Any]],
         tools: FastMCP | None = None,
         max_completion_tokens: int | None = 1024,
-        max_iterations: int | None = 10
+        max_iterations: int | None = 10,
     ) -> str | None:
         schemas = await self._tool_schema(tools) if tools else []
         messages = self._system + prompts
+
+        logger.debug(
+            f"Starting LLM invocation with {len(prompts)} prompts, max_iterations={max_iterations}"
+        )
 
         result = None
         iter = 0
         while result is None and (iter < max_iterations or max_iterations is None):
             iter += 1
+            logger.debug(f"LLM iteration {iter}/{max_iterations}")
             result = await self._invoke(messages, tools, schemas, max_completion_tokens)
 
+        logger.debug(f"LLM invocation complete after {iter} iterations")
         return result

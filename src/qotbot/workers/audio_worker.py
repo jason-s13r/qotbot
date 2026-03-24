@@ -29,16 +29,19 @@ def put_audio(
     ext: str | None = None,
 ):
     audio_queue.put_nowait(AudioTask(chat_id, message_id, media_data, ext))
-    logger.debug(f"Audio queued: chat={chat_id}, msg={message_id}")
+    logger.debug(
+        f"Audio task queued: chat_id={chat_id}, message_id={message_id}, ext={ext}"
+    )
 
 
 async def _process_audio_item(item: AudioTask):
     global whisper_service
-    logger.info(
-        f"Processing audio {item.message_id} in chat {item.chat_id} (ext={item.ext})"
+    logger.debug(
+        f"Processing audio transcription for message_id={item.message_id}, chat_id={item.chat_id}, ext={item.ext}"
     )
 
     if not whisper_service:
+        logger.info("Initialising WhisperService")
         whisper_service = WhisperService()
 
     transcription = await whisper_service.transcribe(item.media_data, item.ext)
@@ -52,7 +55,7 @@ async def _process_audio_item(item: AudioTask):
         )
         await session.commit()
 
-    logger.info(f"Audio transcription stored for message {item.message_id}")
+    logger.info(f"Audio transcription stored for message_id={item.message_id}")
 
     put_classification(item.chat_id, item.message_id)
 
@@ -62,10 +65,16 @@ async def audio_worker():
     while True:
         try:
             item = await asyncio.wait_for(audio_queue.get(), timeout=1.0)
+            logger.debug(
+                f"Dequeued audio task: chat_id={item.chat_id}, message_id={item.message_id}"
+            )
 
             await _process_audio_item(item)
         except asyncio.TimeoutError:
             await asyncio.sleep(0.1)
             continue
         except Exception as e:
-            logger.error(e, exc_info=True)
+            logger.error(
+                f"Audio worker error: {e}",
+                exc_info=True,
+            )

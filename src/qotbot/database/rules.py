@@ -41,7 +41,7 @@ async def add_rule(
     """
     rule = Rule(chat_id=chat_id, specifier=specifier, text=text)
     session.add(rule)
-    logger.info(f"Added rule for chat {chat_id}: {specifier}")
+    logger.info(f"Added rule for chat_id={chat_id}, specifier={specifier}")
     return rule
 
 
@@ -62,11 +62,11 @@ async def update_rule(
     """
     rule = await session.get(Rule, rule_id)
     if not rule or rule.chat_id != chat_id:
-        logger.warning(f"Rule {rule_id} not found for chat {chat_id}")
+        logger.warning(f"Rule {rule_id} not found for chat_id={chat_id}")
         return None
 
     rule.text = text
-    logger.info(f"Updated rule {rule_id} for chat {chat_id}")
+    logger.info(f"Updated rule_id={rule_id} for chat_id={chat_id}")
     return rule
 
 
@@ -84,11 +84,11 @@ async def delete_rule(session: AsyncSession, chat_id: int, rule_id: int) -> bool
     """
     rule = await session.get(Rule, rule_id)
     if not rule or rule.chat_id != chat_id:
-        logger.warning(f"Rule {rule_id} not found for chat {chat_id}")
+        logger.warning(f"Rule {rule_id} not found for chat_id={chat_id}")
         return False
 
     await session.delete(rule)
-    logger.info(f"Deleted rule {rule_id} for chat {chat_id}")
+    logger.info(f"Deleted rule_id={rule_id} for chat_id={chat_id}")
     return True
 
 

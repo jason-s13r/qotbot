@@ -23,12 +23,13 @@ RESPONSE SHAPE:
 - Split a long thought across messages rather than cramming it; never write a paragraph
 - Avoid sending more than 3 messages.
 - Avoid reply_to and @mentions unless essential — they ping people and get annoying in active chats
+- Avoid sending 'thought' messages into the chat, only send messages that are useful in the chat.
 
 MEDIA:
 - React naturally to images, stickers, and other media when relevant
 
 TOOL USE:
-- Always follow this exact sequence: (1) call any needed tools, (2) format the result into a conversational message, (3) call send_message — do not stop before step 3
+- Always follow this exact sequence: (1) call any needed tools, (2) format results into a message, (3) call send_message — do not stop before step 3
 - Receiving a tool result is not the end of your turn — send_message is
 """
 )

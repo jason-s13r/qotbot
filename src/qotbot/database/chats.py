@@ -36,11 +36,11 @@ async def create_or_update_chat_from_event(
             can_respond=False,
         )
         session.add(chat)
-        logger.info(f"Created chat {chat_id}")
+        logger.info(f"Created chat record for chat_id={chat_id}")
     else:
         chat.title = event.chat.title
         chat.username = event.chat.username
-        logger.info(f"Updated chat {chat_id}")
+        logger.debug(f"Updated chat record for chat_id={chat_id}")
 
     return chat
 
@@ -77,9 +77,11 @@ async def set_chat_can_respond(
             can_respond=can_respond,
         )
         session.add(chat)
-        logger.info(f"Created/merged chat {chat_id} with can_respond={can_respond}")
+        logger.info(
+            f"Created chat record for chat_id={chat_id} with can_respond={can_respond}"
+        )
     else:
         chat.can_respond = can_respond
-        logger.info(f"Updated chat {chat_id} can_respond={can_respond}")
+        logger.info(f"Updated chat_id={chat_id} can_respond={can_respond}")
 
     return chat

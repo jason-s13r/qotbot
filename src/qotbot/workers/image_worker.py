@@ -30,14 +30,17 @@ def put_image(
     image_data: str,
 ):
     image_queue.put_nowait(ImageTask(chat_id, message_id, image_data))
-    logger.debug(f"Image queued: chat={chat_id}, msg={message_id}")
+    logger.debug(f"Image task queued: chat_id={chat_id}, message_id={message_id}")
 
 
 async def image_worker(bot: TelegramClient, llmclient):
-    logger.info("worker started")
+    logger.info("Image worker started")
     while True:
         try:
             item = await asyncio.wait_for(image_queue.get(), timeout=1.0)
+            logger.debug(
+                f"Dequeued image task: chat_id={item.chat_id}, message_id={item.message_id}"
+            )
         except asyncio.TimeoutError:
             await asyncio.sleep(0.1)
             continue
@@ -47,7 +50,9 @@ async def image_worker(bot: TelegramClient, llmclient):
         image_data = item.image_data
 
         try:
-            logger.info(f"Processing image {message_id} in chat {chat_id}")
+            logger.debug(
+                f"Processing image description for message_id={message_id}, chat_id={chat_id}"
+            )
 
             bot_identity, chat_identity = await get_identities(bot, chat_id)
             image_describer = ImageDescriber(llmclient, bot_identity, chat_identity)
@@ -74,9 +79,11 @@ async def image_worker(bot: TelegramClient, llmclient):
                 await store_image_description(session, message_id, chat_id, description)
                 await session.commit()
 
-            logger.info(f"Image description stored for message {message_id}")
+            logger.info(f"Image description stored for message_id={message_id}")
 
             put_classification(chat_id, message_id)
 
         except Exception as e:
-            logger.error(f"Image worker error: {e}", exc_info=True)
+            logger.error(
+                f"Image worker error for message_id={message_id}: {e}", exc_info=True
+            )

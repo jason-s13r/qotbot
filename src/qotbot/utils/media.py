@@ -17,5 +17,7 @@ async def download_media_base64(message: Message) -> str | None:
             return None
         return base64.b64encode(file_bytes).decode("utf-8")
     except Exception as e:
-        logger.error(f"Error downloading media: {e}")
+        logger.error(
+            f"Error downloading media from message_id={message.id}: {e}", exc_info=True
+        )
         return None

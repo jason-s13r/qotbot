@@ -26,27 +26,29 @@ commands = Commands()
 async def handle_transcript_event(event: events.NewMessage.Event):
     """Show the transcript of a message."""
     async with get_session() as session:
-        logger.info(f"/transcript command received from {event.sender_id}")
+        logger.debug(f"/transcript command invoked by user_id={event.sender_id}")
         if not event.reply_to:
-            logger.info("No reply_to found, ignoring")
+            logger.debug("No reply_to found, ignoring /transcript command")
             return
 
         async with event.client.action(event.chat_id, "typing"):
             msg_id = event.reply_to.reply_to_msg_id
-            logger.info(f"Looking up message id {msg_id} in chat {event.chat_id}")
+            logger.debug(f"Looking up message_id={msg_id} in chat_id={event.chat_id}")
 
             message = await session.get(Message, (event.chat_id, msg_id))
 
             if not message:
-                logger.warning(f"Message {msg_id} not found in database")
+                logger.warning(
+                    f"Message {msg_id} not found in database for /transcript"
+                )
                 return
 
             if message.audio_transcription:
-                logger.info(f"Sending audio transcription for message {msg_id}")
+                logger.info(f"Sending audio transcription for message_id={msg_id}")
                 await event.reply(f"Audio transcription: {message.audio_transcription}")
 
             if message.image_description:
-                logger.info(f"Sending image description for message {msg_id}")
+                logger.info(f"Sending image description for message_id={msg_id}")
                 await event.reply(f"Image description: {message.image_description}")
 
 
@@ -54,23 +56,25 @@ async def handle_transcript_event(event: events.NewMessage.Event):
 async def handle_classification_event(event: events.NewMessage.Event):
     """Show the classification reason of a message."""
     async with get_session() as session:
-        logger.info(f"/classification command received from {event.sender_id}")
+        logger.debug(f"/classification command invoked by user_id={event.sender_id}")
         if not event.reply_to:
-            logger.info("No reply_to found, ignoring")
+            logger.debug("No reply_to found, ignoring /classification command")
             return
 
         async with event.client.action(event.chat_id, "typing"):
             msg_id = event.reply_to.reply_to_msg_id
-            logger.info(f"Looking up message id {msg_id} in chat {event.chat_id}")
+            logger.debug(f"Looking up message_id={msg_id} in chat_id={event.chat_id}")
 
             message = await session.get(Message, (event.chat_id, msg_id))
 
             if not message:
-                logger.warning(f"Message {msg_id} not found in database")
+                logger.warning(
+                    f"Message {msg_id} not found in database for /classification"
+                )
                 return
 
             if message.classification_reason:
-                logger.info(f"Sending classification reason for message {msg_id}")
+                logger.info(f"Sending classification reason for message_id={msg_id}")
                 await event.reply(message.classification_reason)
 
 
@@ -78,7 +82,7 @@ async def handle_classification_event(event: events.NewMessage.Event):
 async def handle_summary_event(event: events.NewMessage.Event):
     """Show the summary of the chat."""
     logger.info(
-        f"/summary command received from {event.sender_id} in chat {event.chat_id}"
+        f"/summary command invoked by user_id={event.sender_id} in chat_id={event.chat_id}"
     )
 
     bot_identity, chat_identity = await get_identities(event.client, event.chat_id)
@@ -88,13 +92,15 @@ async def handle_summary_event(event: events.NewMessage.Event):
         chat = await session.get(Chat, event.chat_id)
 
         if not chat:
-            logger.warning(f"Chat {event.chat_id} not found in database")
+            logger.warning(f"Chat {event.chat_id} not found in database for /summary")
             return
 
         prior_summary = chat.overall_summary
 
         messages = await get_recent_messages(session, event.chat_id, limit=1000)
-        logger.info(f"Summarising {len(messages)} messages from chat {event.chat_id}")
+        logger.info(
+            f"Retrieved {len(messages)} messages from chat_id={event.chat_id} for summarisation"
+        )
         transcript = format_messages_for_prompt(messages)
 
         prompts = [
@@ -105,14 +111,16 @@ async def handle_summary_event(event: events.NewMessage.Event):
         ]
 
     summariser_instance = Summariser(llmclient, bot_identity, chat_identity)
-    logger.info("Invoking summariser LLM")
+    logger.info(f"Invoking summariser LLM for chat_id={event.chat_id}")
 
     summary: str = ""
     async with event.client.action(event.chat_id, "typing"):
         summary = await summariser_instance.invoke(prompts, max_completion_tokens=10000)
         summary = summary or ""
 
-    logger.info(f"Summary generated ({len(summary) if summary else 0} characters)")
+    logger.info(
+        f"Summary generated for chat_id={event.chat_id} ({len(summary) if summary else 0} characters)"
+    )
 
     async with get_session() as session:
         chat = await session.get(Chat, event.chat_id)
@@ -123,7 +131,7 @@ async def handle_summary_event(event: events.NewMessage.Event):
 
         chat.overall_summary = summary or ""
         session.add(chat)
-        logger.info("Summary saved to database")
+        logger.info(f"Summary saved to database for chat_id={event.chat_id}")
 
     if not summary:
         return

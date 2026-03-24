@@ -24,13 +24,13 @@ async def create_or_update_bot_user(session: AsyncSession, bot: TelegramClient) 
             is_bot=me.bot,
         )
         session.add(user)
-        logger.info(f"Created bot user {me.id}")
+        logger.info(f"Created bot user record for user_id={me.id}")
     else:
         user.username = me.username
         user.first_name = me.first_name
         user.last_name = me.last_name
         user.is_bot = me.bot
-        logger.info(f"Updated bot user {me.id}")
+        logger.debug(f"Updated bot user record for user_id={me.id}")
 
     return user
 
@@ -43,7 +43,7 @@ async def create_or_update_user_from_event(
     """
     sender = await event.get_sender()
     if not sender:
-        logger.warning(f"No sender found for event {event.id}")
+        logger.warning(f"No sender found for event_id={event.id}")
         return None
 
     user = await session.get(User, sender.id)
@@ -56,12 +56,12 @@ async def create_or_update_user_from_event(
             is_bot=getattr(sender, "bot", False),
         )
         session.add(user)
-        logger.info(f"Created user {sender.id}")
+        logger.info(f"Created user record for user_id={sender.id}")
     else:
         user.username = getattr(sender, "username", user.username)
         user.first_name = getattr(sender, "first_name", user.first_name)
         user.last_name = getattr(sender, "last_name", user.last_name)
         user.is_bot = getattr(sender, "bot", user.is_bot)
-        logger.info(f"Updated user {sender.id}")
+        logger.debug(f"Updated user record for user_id={sender.id}")
 
     return user

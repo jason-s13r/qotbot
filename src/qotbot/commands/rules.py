@@ -20,8 +20,8 @@ rules = Commands()
 @rules.slash("rules", rules.Permissions(chat_admin=True, is_scoped=True))
 async def handle_rules_event(event: events.NewMessage.Event, payload: str = None):
     """Manage chat rules for LLM behavior."""
-    logger.info(
-        f"/rules command received from {event.sender_id} in chat {event.chat_id}"
+    logger.debug(
+        f"/rules command invoked by user_id={event.sender_id} in chat_id={event.chat_id}"
     )
 
     VALID_SPECIFIERS = {"chatter", "classifier"}

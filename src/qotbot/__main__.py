@@ -61,8 +61,7 @@ logging.basicConfig(
 
 logging.getLogger("telethon").setLevel(logging.INFO)
 logging.getLogger("openai").setLevel(logging.INFO)
-logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
 logging.getLogger("aiosqlite").setLevel(logging.INFO)
 logging.getLogger("asyncio").setLevel(logging.INFO)
 logging.getLogger("httpx").setLevel(logging.INFO)
@@ -72,18 +71,19 @@ logging.getLogger("aiohttp").setLevel(logging.INFO)
 logging.getLogger("librosa").setLevel(logging.INFO)
 logging.getLogger("whisper").setLevel(logging.INFO)
 logging.getLogger("ffmpeg").setLevel(logging.INFO)
+logging.getLogger("mcp").setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 async def start():
     loop = asyncio.get_event_loop()
-    logger.info("Initialising database:")
+    logger.info("Initialising main database")
     await init_db(DATABASE_PATH)
-    logger.info("Initialising logs database:")
+    logger.info("Initialising logs database")
     await init_db(LOGS_DB_PATH)
     logger.addHandler(SQLiteHandler())
 
-    logger.info("Connecting to Telegram:")
+    logger.info("Connecting to Telegram")
 
     bot = TelegramClient(DATA_PATH / "telegram", API_ID, API_HASH, loop=loop)
     llmclient = AsyncOpenAI(base_url=LLM_API_URL, api_key=LLM_API_KEY)
@@ -106,13 +106,15 @@ async def start():
         async with get_session() as session:
             await create_or_update_bot_user(session, bot)
 
+        logger.info("Registering message event handler")
+
         @bot.on(events.NewMessage)
         async def handle_incoming_event(event: events.NewMessage.Event):
             if event.raw_text.startswith("/"):
                 return
 
             logger.info(
-                f"NEW MESSAGE: chat_id={event.chat_id}, message_id={event.id}, sender_id={event.sender_id}: {event.raw_text}"
+                f"New message: chat_id={event.chat_id}, message_id={event.id}, sender_id={event.sender_id}"
             )
 
             async with get_session() as session:
@@ -131,7 +133,7 @@ async def start():
             if has_audio or has_video:
                 if event.file.duration > MAX_TRANSCRIPT_DURATION:
                     logger.warning(
-                        f"File duration {event.file.duration} exceeds max transcript duration, skipping transcription for message {message_id}"
+                        f"File duration {event.file.duration}s exceeds max ({MAX_TRANSCRIPT_DURATION}s), skipping transcription for message_id={message_id}"
                     )
                     has_audio = False
                     has_video = False
@@ -140,26 +142,39 @@ async def start():
                 try:
                     media_bytes = await event.message.download_media(bytes)
                     if media_bytes:
-                        put_audio(chat_id, message_id, media_bytes, ext=event.file.ext)
-                        logger.info(f"Audio queued for transcription: {message_id}")
+                        put_audio(
+                            chat_id, message_id, media_bytes, ext=event.file.ext
+                        )
+                        logger.info(
+                            f"Audio task queued for message_id={message_id}"
+                        )
                 except Exception as e:
-                    logger.error(f"Audio queue failed: {e}", exc_info=True)
+                    logger.error(
+                        f"Failed to queue audio for message_id={message_id}: {e}",
+                        exc_info=True,
+                    )
 
             if has_image:
                 try:
                     image_base64 = await download_media_base64(event.message)
                     put_image(chat_id, message_id, image_base64)
-                    logger.info(f"Image queued for description: {message_id}")
+                    logger.info(f"Image task queued for message_id={message_id}")
                 except Exception as e:
-                    logger.error(f"Image queue failed: {e}", exc_info=True)
+                    logger.error(
+                        f"Failed to queue image for message_id={message_id}: {e}",
+                        exc_info=True,
+                    )
 
             if not has_audio and not has_image and not has_video:
                 put_classification(chat_id, message_id)
-                logger.info(f"Message queued for classification: {message_id}")
+                logger.debug(
+                    f"Classification task queued for message_id={message_id}"
+                )
 
         logger.info("Bot started successfully")
         bot.loop.set_debug(True)
 
+        logger.info("Starting worker tasks")
         asyncio.create_task(image_worker(bot, llmclient))
         asyncio.create_task(audio_worker())
         asyncio.create_task(classification_worker(bot, llmclient))

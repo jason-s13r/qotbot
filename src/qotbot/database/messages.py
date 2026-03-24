@@ -58,7 +58,7 @@ async def store_message_from_event(
     )
 
     session.add(message)
-    logger.info(f"Stored message {message_id} in chat {chat_id}")
+    logger.debug(f"Stored message message_id={message_id} in chat_id={chat_id}")
     return message
 
 
@@ -97,7 +97,7 @@ async def store_sent_message(session: AsyncSession, message, chat_id: int):
     )
 
     session.add(db_message)
-    logger.info(f"Stored sent message {message_id} in chat {chat_id}")
+    logger.debug(f"Stored sent message message_id={message_id} in chat_id={chat_id}")
     return db_message
 
 
@@ -198,9 +198,11 @@ async def store_image_description(
         message.image_description = description
         message.image_transcribed = True
         message.queue_status = "classifying"
-        logger.info(f"Stored image description for message {message_id}")
+        logger.info(f"Stored image description for message_id={message_id}")
     else:
-        logger.warning(f"Message {message_id} not found for image description")
+        logger.warning(
+            f"Message not found for image description: message_id={message_id}, chat_id={chat_id}"
+        )
 
 
 async def get_messages_ready_for_response(
@@ -260,9 +262,11 @@ async def store_audio_transcription(
         message.audio_transcription = transcription
         message.audio_transcribed = True
         message.queue_status = "classifying"
-        logger.info(f"Stored audio transcription for message {message_id}")
+        logger.info(f"Stored audio transcription for message_id={message_id}")
     else:
-        logger.warning(f"Message {message_id} not found for audio transcription")
+        logger.warning(
+            f"Message not found for audio transcription: message_id={message_id}, chat_id={chat_id}"
+        )
 
 
 async def store_message_classification(
@@ -285,9 +289,13 @@ async def store_message_classification(
         message.classified = True
         message.is_approved = is_approved
         message.queue_status = "responding" if is_approved else "skipped"
-        logger.info(f"Stored classification for message {message_id}: {reason[:50]}...")
+        logger.info(
+            f"Stored classification for message_id={message_id}: {reason[:50]}..."
+        )
     else:
-        logger.warning(f"Message {message_id} not found for classification")
+        logger.warning(
+            f"Message not found for classification: message_id={message_id}, chat_id={chat_id}"
+        )
 
 
 async def get_unprocessed_messages(
@@ -454,9 +462,11 @@ async def mark_message_skipped(
     if message:
         message.skip_reason = reason
         message.queue_status = "skipped"
-        logger.info(f"Marked message {message_id} as skipped: {reason}")
+        logger.info(f"Marked message_id={message_id} as skipped: {reason}")
     else:
-        logger.warning(f"Message {message_id} not found for skip marking")
+        logger.warning(
+            f"Message not found for skip marking: message_id={message_id}, chat_id={chat_id}"
+        )
 
 
 async def mark_message_responded(
@@ -476,6 +486,8 @@ async def mark_message_responded(
     if message:
         message.responded = True
         message.queue_status = "complete"
-        logger.info(f"Marked message {message_id} as responded")
+        logger.info(f"Marked message_id={message_id} as responded")
     else:
-        logger.warning(f"Message {message_id} not found for response marking")
+        logger.warning(
+            f"Message not found for response marking: message_id={message_id}, chat_id={chat_id}"
+        )

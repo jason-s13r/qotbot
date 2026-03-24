@@ -170,13 +170,32 @@ class TelegramProvider(Provider):
                     parse_mode="markdown",
                 )
                 await self._store_sent_message(response)
+                with_message_id = f"message_id={response.id}"
                 in_reply_to = f"reply_to={reply_to}" if reply_to is not None else ""
                 as_scheduled = (
                     f"SCHEDULED for {schedule}" if schedule is not None else "SENT"
                 )
-                return f"{as_scheduled} message_id={response.id} {in_reply_to}"
+                with_content = f"with content: {message}" if message else ""
+                with_file = f"and file_uri: {file_uri}" if file_uri else ""
+                response = " ".join(
+                    filter(
+                        None,
+                        [
+                            as_scheduled,
+                            with_message_id,
+                            in_reply_to,
+                            with_content,
+                            with_file,
+                        ],
+                    )
+                ).strip()
+
+                logger.info(response)
+                return response
         except Exception as e:
-            logger.error(f"Error sending message: {e}")
+            logger.error(
+                f"Error sending message to chat_id={self.chat_id}: {e}", exc_info=True
+            )
             raise e
 
     def _get_telegram_cache_resource(self, cache_id: str):
@@ -211,7 +230,10 @@ class TelegramProvider(Provider):
                 contents=[ResourceContent(content=data, mime_type=mime_type)], meta=meta
             )
         except Exception as e:
-            logger.error(f"Error downloading media from message {message_id}: {e}")
+            logger.error(
+                f"Error downloading media from message_id={message_id}: {e}",
+                exc_info=True,
+            )
             raise e
 
     async def _create_poll(
@@ -287,5 +309,7 @@ class TelegramProvider(Provider):
             media = pickle.loads(base64.b64decode(item.content))
             return media
         except Exception as e:
-            logger.error(f"Failed to decode pickle content: {e}")
+            logger.error(
+                f"Failed to decode pickle content for resource: {e}", exc_info=True
+            )
             raise ValueError("Invalid pickle content") from e

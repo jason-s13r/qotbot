@@ -73,21 +73,21 @@ async def init_db(database_path):
 
     database_path.parent.mkdir(parents=True, exist_ok=True)
 
-    logger.info("Syncing database schema")
+    logger.debug("Syncing database schema")
     await _sync_database_schema(database_path)
-    logger.info("Database schema synced")
+    logger.debug("Database schema synced")
 
-    logger.info("Creating database engine")
+    logger.debug("Creating database engine")
     engine = create_async_engine(
         f"sqlite+aiosqlite:///{database_path}",
         echo=False,
     )
 
-    logger.info("Creating async session factory")
+    logger.debug("Creating async session factory")
     async_session = async_sessionmaker(
         engine, expire_on_commit=False, class_=AsyncSession
     )
-    logger.info("Database initialization complete")
+    logger.info(f"Database initialization complete: {database_path}")
     return async_session
 
 

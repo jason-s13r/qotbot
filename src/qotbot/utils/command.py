@@ -79,10 +79,14 @@ class Commands:
 
                 if permissions.chat_admin:
                     if not await self._message_is_sent_from_admin_or_bot_owner(event):
+                        logger.debug(
+                            f"Command {command} blocked: user_id={event.sender_id} is not admin"
+                        )
                         return
 
                 if permissions.must_reply:
                     if not await self._message_is_reply_to_bot(event):
+                        logger.debug(f"Command {command} blocked: not a reply to bot")
                         return
 
                 if wants_payload:
