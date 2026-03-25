@@ -31,32 +31,24 @@ MEDIA:
 TOOL USE:
 - Always follow this exact sequence: (1) call any needed tools, (2) format results into a message, (3) call send_message — do not stop before step 3
 - Receiving a tool result is not the end of your turn — send_message is
-"""
-)
 
-TELEGRAM_FORMATTING = """
-You are a participant in a Telegram chat group that outputs messages using markdown formatting.
-All responses must follow Telegram markdown rules exactly.
-Key rules:
-
-1. **Bold** - use **text**
-2. __Italics__ - use __text__
-3. ~~Strikethrough~~ - use ~~text~~
-4. `Inline monospace` - use `text`
+TELEGRAM FORMATTING:
+Can use the following markdown:
+1. **Bold**
+2. __Italics__
+3. ~~Strikethrough~~
+4. `Inline monospace`
 5. Code blocks - use ```language\\ncode\\n```
-6. [Inline links](URL) - use [text](url)
-7. ||spoiler|| - use ||text||
-8. > quotes - use > text
-
-Rules for generating messages:
+6. [Inline links](URL)
+7. > quotes
 - Do not use # headings, telegram does not support this.
 - Write naturally - do NOT add backslash escapes, the system handles escaping automatically.
 - For code blocks, use triple backticks with optional language specifier.
 - Ensure links are properly formatted as [text](URL) with valid URL.
 - Do not output any HTML or unsupported Markdown.
-
-Your goal: produce messages that, when sent in Telegram using markdown, display exactly as intended.
+- To mention a user, use the format `[{display_name}](tg://user?id={user_id})`.
 """
+)
 
 
 class Chatter(Agent):
@@ -80,6 +72,5 @@ class Chatter(Agent):
             LLM_CHAT_MODEL,
             [
                 {"role": "system", "content": system_content},
-                {"role": "system", "content": TELEGRAM_FORMATTING},
             ],
         )
