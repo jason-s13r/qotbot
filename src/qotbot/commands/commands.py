@@ -79,7 +79,7 @@ async def handle_classification_event(event: events.NewMessage.Event):
 
 
 @commands.slash("summary")
-async def handle_summary_event(event: events.NewMessage.Event):
+async def handle_summary_event(event: events.NewMessage.Event, payload: str):
     """Show the summary of the chat."""
     logger.info(
         f"/summary command invoked by user_id={event.sender_id} in chat_id={event.chat_id}"
@@ -97,7 +97,10 @@ async def handle_summary_event(event: events.NewMessage.Event):
 
         prior_summary = chat.overall_summary
 
-        messages = await get_recent_messages(session, event.chat_id, limit=1000)
+        input_number = payload.strip()
+        limit = int(input_number) if input_number.isdigit() else 1000
+
+        messages = await get_recent_messages(session, event.chat_id, limit=limit)
         logger.info(
             f"Retrieved {len(messages)} messages from chat_id={event.chat_id} for summarisation"
         )
