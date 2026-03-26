@@ -9,6 +9,7 @@ SUMMARISER_PROMPT = Template("""You are summarising the transcript of a group ch
 
 The current chat is: $chat_identity.
 Your identity persona and perspective is that of: $bot_identity.
+$daily_instruction
 
 If a prior summary is provided in <summary>, treat it as ground truth for earlier context and extend or update it rather than replacing it.
 Integrate earlier context from <summary> where relevant, evolve it — don't just append.
@@ -49,8 +50,22 @@ For each active participant: their apparent personality, role in the group, and 
 Links, images, or files that were significant to the conversation, with brief context on why they mattered.
 """)
 
+DAILY_INSTRUCTION = Template("""This is a daily summary covering a specific day ($date). Title the summary with the date at the top in the format "# Daily Summary: YYYY-MM-DD".""")
+
+
 class Summariser(Agent):
-    def __init__(self, client: AsyncOpenAI, bot_identity: str, chat_identity: str):
+    def __init__(
+        self,
+        client: AsyncOpenAI,
+        bot_identity: str,
+        chat_identity: str,
+        is_daily: bool = False,
+        date: str | None = None,
+    ):
+        daily_instruction = ""
+        if is_daily and date:
+            daily_instruction = DAILY_INSTRUCTION.substitute(date=date)
+
         super().__init__(
             client,
             LLM_SUMMARY_MODEL,
@@ -58,7 +73,9 @@ class Summariser(Agent):
                 {
                     "role": "system",
                     "content": SUMMARISER_PROMPT.substitute(
-                        bot_identity=bot_identity, chat_identity=chat_identity
+                        bot_identity=bot_identity,
+                        chat_identity=chat_identity,
+                        daily_instruction=daily_instruction,
                     ),
                 }
             ],

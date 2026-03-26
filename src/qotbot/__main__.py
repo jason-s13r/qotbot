@@ -35,6 +35,7 @@ from qotbot.commands.system import system
 from qotbot.commands.admin import admin
 from qotbot.commands.commands import commands
 from qotbot.commands.rules import rules
+from qotbot.commands.summary import summary
 
 
 API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
@@ -101,7 +102,14 @@ async def start():
                 message = await cmd.build_help_message()
                 await event.respond(message)
 
-        await cmd.use(commands).use(system).use(admin).use(rules).register(bot)
+        await (
+            cmd.use(commands)
+            .use(system)
+            .use(admin)
+            .use(rules)
+            .use(summary)
+            .register(bot)
+        )
 
         async with get_session() as session:
             await create_or_update_bot_user(session, bot)
@@ -142,12 +150,8 @@ async def start():
                 try:
                     media_bytes = await event.message.download_media(bytes)
                     if media_bytes:
-                        put_audio(
-                            chat_id, message_id, media_bytes, ext=event.file.ext
-                        )
-                        logger.info(
-                            f"Audio task queued for message_id={message_id}"
-                        )
+                        put_audio(chat_id, message_id, media_bytes, ext=event.file.ext)
+                        logger.info(f"Audio task queued for message_id={message_id}")
                 except Exception as e:
                     logger.error(
                         f"Failed to queue audio for message_id={message_id}: {e}",
@@ -167,9 +171,7 @@ async def start():
 
             if not has_audio and not has_image and not has_video:
                 put_classification(chat_id, message_id)
-                logger.debug(
-                    f"Classification task queued for message_id={message_id}"
-                )
+                logger.debug(f"Classification task queued for message_id={message_id}")
 
         logger.info("Bot started successfully")
         bot.loop.set_debug(True)
