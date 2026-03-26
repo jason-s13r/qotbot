@@ -33,11 +33,27 @@ async def handle_transcript_event(event: events.NewMessage.Event):
 
             if message.audio_transcription:
                 logger.info(f"Sending audio transcription for message_id={msg_id}")
-                await event.reply(f"Audio transcription: {message.audio_transcription}")
+
+                if len(message.audio_transcription) < 1000:
+                    await event.reply(f"Audio transcription: {message.audio_transcription}")
+                else:
+                    transcript = message.audio_transcription.encode("utf-8")
+                    file = await event.client.upload_file(
+                        transcript, file_name="audio_transcript.txt"
+                    )
+                    await event.reply(file=file)
 
             if message.image_description:
                 logger.info(f"Sending image description for message_id={msg_id}")
-                await event.reply(f"Image description: {message.image_description}")
+                if len(message.image_description) < 1000:
+                    await event.reply(f"Image description: {message.image_description}")
+                else:
+                    transcript = message.image_description.encode("utf-8")
+                    file = await event.client.upload_file(
+                        transcript, file_name="image_description.txt"
+                    )
+                    await event.reply(file=file)
+
 
 
 @commands.slash("classification")

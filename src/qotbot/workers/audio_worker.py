@@ -6,12 +6,11 @@ import tempfile
 from dataclasses import dataclass
 
 import ffmpeg
-import librosa
-import whisper
+from faster_whisper import WhisperModel
 
 from qotbot.database.database import get_session
 from qotbot.database.messages import store_audio_transcription
-from qotbot.utils.config import DATABASE_PATH, WHISPER_LANGUAGE, WHISPER_MODEL
+from qotbot.utils.config import WHISPER_LANGUAGE, WHISPER_MODEL
 from qotbot.workers.classification_worker import put_classification
 
 
@@ -42,7 +41,6 @@ def _ffmpeg_extract_audio(
         out, _ = (
             ffmpeg.input(
                 filename,
-                format=ext.strip(".") if ext else "webm",
                 probesize=5000000,
                 analyzeduration=5000000,
             )
@@ -80,7 +78,7 @@ def _load_whisper_model():
     global whisper_model
     if whisper_model is None:
         logger.info(f"Loading Whisper model: {WHISPER_MODEL}")
-        whisper_model = whisper.load_model(WHISPER_MODEL or "turbo")
+        whisper_model = WhisperModel(WHISPER_MODEL or "turbo")
         logger.info(f"Whisper model '{WHISPER_MODEL}' loaded successfully")
     return whisper_model
 
@@ -90,25 +88,21 @@ async def _transcribe_audio(audio_bytes: bytes, ext: str | None) -> str:
     logger.info(f"Transcribing audio with Whisper, ext={ext}")
 
     def _transcribe():
-        audio_buffer = _ffmpeg_extract_audio(audio_bytes, ext)
-
-        audio, sr = librosa.load(audio_buffer, sr=None)
-        if audio.size == 0 or len(audio) < sr * 0.1:
-            audio_buffer = _ffmpeg_extract_audio(audio_bytes, ext, True)
-            audio, sr = librosa.load(audio_buffer, sr=None)
-
-        if audio.size == 0 or len(audio) < sr * 0.1:
-            raise ValueError("Audio file is empty or too short")
+        audio_buffer = _ffmpeg_extract_audio(audio_bytes, ext, True)
 
         model = _load_whisper_model()
-        return model.transcribe(audio, language=WHISPER_LANGUAGE, verbose=False)
+        segments, info = model.transcribe(
+            audio_buffer,
+            language=WHISPER_LANGUAGE,
+            vad_filter=True,
+        )
+        result = "\n".join(segment.text for segment in segments)
+        logger.debug(f"Whisper transcription info: {info}")
+        logger.debug(f"Transcription result: '{result}'")
+        return result
 
-    result = await loop.run_in_executor(None, _transcribe)
-    text = result.get("text", "")
-    if isinstance(text, str):
-        text = text.strip()
-    else:
-        text = str(text).strip()
+    text = await loop.run_in_executor(None, _transcribe)
+    text = text.strip()
     logger.info(f"Audio transcription complete: {len(text)} characters")
     return text
 

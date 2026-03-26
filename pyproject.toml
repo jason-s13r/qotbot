@@ -11,13 +11,12 @@ dependencies = [
     "fastmcp>=3.0.0",
     "ffmpeg-python>=0.2.0",
     "openai>=2.26.0",
-    "openai-whisper>=20250625",
-    "librosa>=0.10.0",
     "requests>=2.32.5",
     "sqlalchemy>=2.0.43",
     "telethon>=1.40.0",
     "greenlet>=3.3.2",
     "ollama>=0.6.1",
+    "faster-whisper>=1.2.1",
 ]
 
 [build-system]
