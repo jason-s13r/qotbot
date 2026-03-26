@@ -60,17 +60,21 @@ logging.basicConfig(
     ],
 )
 
-logging.getLogger("telethon").setLevel(logging.INFO)
-logging.getLogger("openai").setLevel(logging.INFO)
-logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
-logging.getLogger("aiosqlite").setLevel(logging.INFO)
-logging.getLogger("asyncio").setLevel(logging.INFO)
-logging.getLogger("httpx").setLevel(logging.INFO)
-logging.getLogger("httpcore").setLevel(logging.INFO)
-logging.getLogger("fastmcp").setLevel(logging.INFO)
-logging.getLogger("aiohttp").setLevel(logging.INFO)
-logging.getLogger("ffmpeg").setLevel(logging.INFO)
-logging.getLogger("mcp").setLevel(logging.INFO)
+logging.getLogger('telethon').setLevel(logging.INFO)
+logging.getLogger('aiosqlite').setLevel(logging.INFO)
+logging.getLogger('httpcore').setLevel(logging.INFO)
+logging.getLogger('aiohttp').setLevel(logging.INFO)
+logging.getLogger('sqlalchemy').setLevel(logging.WARNING)
+logging.getLogger('asyncio').setLevel(logging.INFO)
+logging.getLogger('cryptg').setLevel(logging.INFO)
+logging.getLogger('fastmcp').setLevel(logging.INFO)
+logging.getLogger('openai').setLevel(logging.INFO)
+logging.getLogger('ollama').setLevel(logging.INFO)
+logging.getLogger('greenlet').setLevel(logging.INFO)
+# logging.getLogger('ffmpeg').setLevel(logging.INFO)
+# logging.getLogger('faster_whisper').setLevel(logging.INFO)
+
+
 logger = logging.getLogger(__name__)
 
 

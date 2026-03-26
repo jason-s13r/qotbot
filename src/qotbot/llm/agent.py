@@ -97,28 +97,29 @@ class Agent:
 
     async def _invoke(
         self,
-        messages: list[dict[str, Any]],
+        prompts: list[dict[str, Any]],
         tools: FastMCP | None = None,
         schemas: list[dict[str, Any]] = None,
         max_completion_tokens: int | None = None,
-    ):
+    ) -> tuple[str | None, list[dict[str, Any]]]:
+        messages: list[dict[str, Any]] = []
         response = await self._client.chat.completions.create(
             max_completion_tokens=max_completion_tokens,
             model=self._model,
-            messages=messages,
+            messages=prompts,
             tool_choice="auto",
             tools=schemas,
         )
 
         if response is None:
             logger.warning("LLM returned no response")
-            return "EMPTY"
+            return "EMPTY", messages
 
         message = response.choices[0].message
 
         if not message.tool_calls:
             logger.debug("LLM response (no tool calls): %s", message.content)
-            return message.content or "EMPTY"
+            return message.content or "EMPTY", messages
 
         messages.append(message)
 
@@ -127,7 +128,7 @@ class Agent:
 
         messages.extend(results)
 
-        return None
+        return None, messages
 
     async def invoke(
         self,
@@ -148,7 +149,8 @@ class Agent:
         while result is None and (iter < max_iterations or max_iterations is None):
             iter += 1
             logger.debug(f"LLM iteration {iter}/{max_iterations}")
-            result = await self._invoke(messages, tools, schemas, max_completion_tokens)
+            result, changes = await self._invoke(messages, tools, schemas, max_completion_tokens)
+            messages.extend(changes)
 
         logger.debug(f"LLM invocation complete after {iter} iterations")
         return result
