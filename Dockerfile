@@ -1,7 +1,10 @@
 FROM python:3.13-slim
 
 WORKDIR /app
-COPY . /app
+COPY src /app/src
+COPY pyproject.toml /app/
+COPY uv.lock /app/
+COPY README.md /app/
 
 RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
