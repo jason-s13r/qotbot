@@ -39,8 +39,12 @@ class Message(Base):
     responded = Column(Boolean, default=False)
     skip_reason = Column(Text, nullable=True)
     queue_status = Column(String, nullable=True)
+    trace_message_id = Column(
+        BigInteger, ForeignKey("messages.id", ondelete="SET NULL"), nullable=True
+    )
 
     __table_args__ = (PrimaryKeyConstraint("chat_id", "id"),)
 
     chat = relationship("Chat", back_populates="messages")
     sender = relationship("User", back_populates="messages")
+    trace_message = relationship("Message", remote_side=[id])

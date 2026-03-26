@@ -7,6 +7,7 @@ from fastmcp.tools import Tool
 from qotbot.database.database import get_session
 from qotbot.database.messages import mark_message_skipped, store_message_classification
 from qotbot.utils.config import DATABASE_PATH
+from qotbot.workers.response_worker import put_response
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,8 @@ class ClassificationProvider(Provider):
         logger.info(
             f"Classification approved for chat_id={self.chat_id}, message_id={self.message_id}: {reason}"
         )
+
+        put_response(self.chat_id, self.message_id)
 
         return "APPROVED"
 

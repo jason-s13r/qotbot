@@ -1,11 +1,11 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 from telethon import events
-from telethon.tl.custom import Message
 
 from sqlalchemy.orm import selectinload
+import telethon
 
 from qotbot.database.models.chat import Chat
 from qotbot.database.models.message import Message
@@ -62,7 +62,12 @@ async def store_message_from_event(
     return message
 
 
-async def store_sent_message(session: AsyncSession, message, chat_id: int):
+async def store_sent_message(
+    session: AsyncSession,
+    message: telethon.tl.custom.Message,
+    chat_id: int,
+    trace_message_id: int | None = None,
+) -> Message:
     """
     Store a message that was sent by the bot.
 
@@ -70,6 +75,7 @@ async def store_sent_message(session: AsyncSession, message, chat_id: int):
         session: Async database session
         message: Telegram message object from send_message
         chat_id: The chat ID
+        trace_message_id: Optional message ID to link this sent message to (e.g. the user message it is responding to)
 
     Returns:
         The created Message object
@@ -94,6 +100,7 @@ async def store_sent_message(session: AsyncSession, message, chat_id: int):
         classified=False,
         responded=True,
         queue_status="complete",
+        trace_message_id=trace_message_id,
     )
 
     session.add(db_message)

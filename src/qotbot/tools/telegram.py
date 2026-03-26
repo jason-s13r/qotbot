@@ -36,10 +36,11 @@ logger = logging.getLogger(__name__)
 class TelegramProvider(Provider):
     """Provides resources and tools related to a telegram chat."""
 
-    def __init__(self, client: TelegramClient, chat_id: int):
+    def __init__(self, client: TelegramClient, chat_id: int, message_id: int):
         super().__init__()
-        self.client = client
-        self.chat_id = chat_id
+        self._client = client
+        self._chat_id = chat_id
+        self._message_id = message_id
         self._resource_cache: dict[str, ResourceResult] = {}
         self._pickle_decode_guid = str(uuid.uuid4())
 
@@ -130,7 +131,7 @@ class TelegramProvider(Provider):
 
     def _get_chat_id(self) -> int:
         """Get the chat ID."""
-        return self.chat_id
+        return self._chat_id
 
     async def _send_message(
         self,
@@ -141,7 +142,7 @@ class TelegramProvider(Provider):
         file_uri: str | None = None,
     ):
         try:
-            async with self.client.action(self.chat_id, "typing"):
+            async with self._client.action(self._chat_id, "typing"):
                 file = None
                 if file_uri:
                     resource = await ctx.read_resource(file_uri)
@@ -158,12 +159,14 @@ class TelegramProvider(Provider):
                     if len(file) == 1:
                         file = file[0]
                     if file_name is not None and file is not None:
-                        file = await self.client.upload_file(file, file_name=file_name)
+                        file = await self._client.upload_file(file, file_name=file_name)
 
                 await asyncio.sleep(0.1)
-                response = await self.client.send_message(
-                    self.chat_id,
-                    message,
+                cid = str(self._chat_id).replace('-100', '')
+                text = message + f"\n[trace](https://t.me/c/{cid}/{self._message_id})"
+                response = await self._client.send_message(
+                    self._chat_id,
+                    text,
                     reply_to=reply_to,
                     file=file,
                     schedule=schedule,
@@ -194,7 +197,7 @@ class TelegramProvider(Provider):
                 return response
         except Exception as e:
             logger.error(
-                f"Error sending message to chat_id={self.chat_id}: {e}", exc_info=True
+                f"Error sending message to chat_id={self._chat_id}: {e}", exc_info=True
             )
             raise e
 
@@ -209,14 +212,14 @@ class TelegramProvider(Provider):
     async def _get_message_media(self, message_id: int):
         """Download media from a message and return it as bytes."""
         try:
-            chat = await self.client.get_entity(self.chat_id)
-            message: Message = await self.client.get_messages(chat, ids=message_id)
+            chat = await self._client.get_entity(self._chat_id)
+            message: Message = await self._client.get_messages(chat, ids=message_id)
             if not message:
                 return None
             if not message.media:
                 return None
 
-            data = await self.client.download_media(message, file=bytes)
+            data = await self._client.download_media(message, file=bytes)
             mime_type = "application/octet-stream"
             meta = {}
             if message.photo:
@@ -295,7 +298,7 @@ class TelegramProvider(Provider):
     async def _store_sent_message(self, message):
         """Store a message that was sent by the bot (not from an event)."""
         async with get_session() as session:
-            await store_sent_message(session, message, self.chat_id)
+            await store_sent_message(session, message, self._chat_id, self._message_id)
 
     def _decode_pickle(self, item: ResourceContent) -> Any:
         if item.mime_type != "application/x-python-pickle":

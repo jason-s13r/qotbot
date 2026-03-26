@@ -5,7 +5,11 @@ from qotbot.workers.classification_worker import (
     put_classification,
     classification_queue,
 )
-from qotbot.workers.response_worker import response_worker
+from qotbot.workers.response_worker import (
+    response_worker,
+    put_response,
+    response_queue,
+)
 
 __all__ = [
     "image_worker",
@@ -18,4 +22,6 @@ __all__ = [
     "put_classification",
     "classification_queue",
     "response_worker",
+    "put_response",
+    "response_queue",
 ]
