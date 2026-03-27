@@ -78,6 +78,7 @@ class Agent:
             return {
                 "role": "tool",
                 "tool_call_id": tool_call.id,
+                "tool_name": name,
                 "content": content_text,
             }
         except Exception as e:
@@ -92,8 +93,53 @@ class Agent:
             return {
                 "role": "tool",
                 "tool_call_id": tool_call.id,
+                "tool_name": name,
                 "content": f"ERROR: {str(e)}",
             }
+
+    def _filter_tool_schemas(
+        self,
+        schemas: list[dict[str, Any]],
+        tool_call_counts: dict[str, int],
+        tool_call_limits: dict[str, int] | None,
+    ) -> list[dict[str, Any]]:
+        if not tool_call_limits:
+            return schemas
+
+        filtered: list[dict[str, Any]] = []
+        for schema in schemas:
+            function = schema.get("function", {})
+            name = function.get("name")
+            if not name:
+                filtered.append(schema)
+                continue
+
+            limit = tool_call_limits.get(name)
+            if limit is None:
+                filtered.append(schema)
+                continue
+
+            if tool_call_counts.get(name, 0) < limit:
+                filtered.append(schema)
+
+        return filtered
+
+    def _update_tool_call_counts(
+        self, changes: list[dict[str, Any]], tool_call_counts: dict[str, int]
+    ):
+        for change in changes:
+            if isinstance(change, dict):
+                role = change.get("role")
+                name = change.get("tool_name")
+            else:
+                role = getattr(change, "role", None)
+                name = getattr(change, "tool_name", None)
+
+            if role != "tool":
+                continue
+            if not name:
+                continue
+            tool_call_counts[name] = tool_call_counts.get(name, 0) + 1
 
     async def _invoke(
         self,
@@ -135,10 +181,12 @@ class Agent:
         prompts: list[dict[str, Any]],
         tools: FastMCP | None = None,
         max_completion_tokens: int | None = 1024,
-        max_iterations: int | None = 10,
+        max_iterations: int | None = 5,
+        tool_call_limits: dict[str, int] | None = None,
     ) -> str | None:
         schemas = await self._tool_schema(tools) if tools else []
         messages = self._system + prompts
+        tool_call_counts: dict[str, int] = {}
 
         logger.debug(
             f"Starting LLM invocation with {len(prompts)} prompts, max_iterations={max_iterations}"
@@ -149,7 +197,13 @@ class Agent:
         while result is None and (iter < max_iterations or max_iterations is None):
             iter += 1
             logger.debug(f"LLM iteration {iter}/{max_iterations}")
-            result, changes = await self._invoke(messages, tools, schemas, max_completion_tokens)
+            iteration_schemas = self._filter_tool_schemas(
+                schemas, tool_call_counts, tool_call_limits
+            )
+            result, changes = await self._invoke(
+                messages, tools, iteration_schemas, max_completion_tokens
+            )
+            self._update_tool_call_counts(changes, tool_call_counts)
             messages.extend(changes)
 
         logger.debug(f"LLM invocation complete after {iter} iterations")

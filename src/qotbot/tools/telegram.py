@@ -1,8 +1,10 @@
 import asyncio
 import base64
+import hashlib
 import logging
 import pickle
 import random
+import re
 import uuid
 from collections.abc import Sequence
 from typing import Any
@@ -43,6 +45,8 @@ class TelegramProvider(Provider):
         self._message_id = message_id
         self._resource_cache: dict[str, ResourceResult] = {}
         self._pickle_decode_guid = str(uuid.uuid4())
+        # Dedupes repeated send_message tool calls for one response cycle.
+        self._sent_message_fingerprints: set[str] = set()
 
     async def _list_tools(self) -> Sequence[Tool]:
         return [
@@ -142,6 +146,22 @@ class TelegramProvider(Provider):
         file_uri: str | None = None,
     ):
         try:
+            fingerprint = self._message_fingerprint(
+                message=message,
+                reply_to=reply_to,
+                schedule=schedule,
+                file_uri=file_uri,
+            )
+            if fingerprint in self._sent_message_fingerprints:
+                dedupe_response = (
+                    f"DUPLICATE_SUPPRESSED fingerprint={fingerprint[:12]} "
+                    f"reply_to={reply_to} file_uri={file_uri}"
+                )
+                logger.info(dedupe_response)
+                return dedupe_response
+
+            self._sent_message_fingerprints.add(fingerprint)
+
             async with self._client.action(self._chat_id, "typing"):
                 file = None
                 if file_uri:
@@ -162,11 +182,9 @@ class TelegramProvider(Provider):
                         file = await self._client.upload_file(file, file_name=file_name)
 
                 await asyncio.sleep(0.1)
-                cid = str(self._chat_id).replace('-100', '')
-                text = message + f"\n[trace](https://t.me/c/{cid}/{self._message_id})"
                 response = await self._client.send_message(
                     self._chat_id,
-                    text,
+                    message,
                     reply_to=reply_to,
                     file=file,
                     schedule=schedule,
@@ -200,6 +218,24 @@ class TelegramProvider(Provider):
                 f"Error sending message to chat_id={self._chat_id}: {e}", exc_info=True
             )
             raise e
+
+    def _message_fingerprint(
+        self,
+        message: str,
+        reply_to: int | None,
+        schedule: hints.DateLike | None,
+        file_uri: str | None,
+    ) -> str:
+        normalized_message = re.sub(r"\s+", " ", message or "").strip()
+        payload = "|".join(
+            [
+                normalized_message,
+                str(reply_to) if reply_to is not None else "",
+                str(schedule) if schedule is not None else "",
+                file_uri or "",
+            ]
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def _get_telegram_cache_resource(self, cache_id: str):
         uri = f"telegram://cache/{cache_id}"

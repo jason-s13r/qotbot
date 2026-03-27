@@ -81,7 +81,11 @@ async def _process_response(
     chat_tools.add_transform(ResourcesAsTools(chat_tools))
 
     logger.info(f"Invoking Chatter for chat {chat_id}, message {message_id}")
-    chatter_logs = await chatter.invoke(common_prompts, chat_tools)
+    # tool_call_limits={"send_message": 3},
+    chatter_logs = await chatter.invoke(
+        common_prompts,
+        chat_tools,
+    )
 
     logger.debug(
         f"Chatter completed, logs: {chatter_logs[:100] if chatter_logs else 'None'}"
