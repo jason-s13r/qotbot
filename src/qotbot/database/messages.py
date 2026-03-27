@@ -1,4 +1,5 @@
 import logging
+import json
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -12,6 +13,15 @@ from qotbot.database.models.message import Message
 from qotbot.database.models.user import User
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_poll_metadata(message_obj) -> tuple[str | None, str | None]:
+    """Extract poll metadata for message persistence and later lookup."""
+    media = getattr(message_obj, "media", None)
+    poll = getattr(media, "poll", None)
+    if not poll:
+        return None, None
+    return "poll", str(poll.id)
 
 
 async def store_message_from_event(
@@ -34,6 +44,7 @@ async def store_message_from_event(
 
     has_image = event.photo is not None or event.sticker is not None
     has_audio = event.audio is not None or event.voice is not None
+    media_type, media_file_id = _extract_poll_metadata(event.message)
 
     message = Message(
         id=message_id,
@@ -45,7 +56,8 @@ async def store_message_from_event(
         reply_to_message_id=(
             event.message.reply_to.reply_to_msg_id if event.message.reply_to else None
         ),
-        media_file_id=None,
+        media_file_id=media_file_id,
+        media_type=media_type,
         has_image=has_image,
         has_audio=has_audio,
         processed=False,
@@ -82,6 +94,7 @@ async def store_sent_message(
     """
     message_id = message.id
     sender_id = message.sender_id
+    media_type, media_file_id = _extract_poll_metadata(message)
 
     db_message = Message(
         id=message_id,
@@ -93,7 +106,8 @@ async def store_sent_message(
         reply_to_message_id=(
             message.reply_to.reply_to_msg_id if message.reply_to else None
         ),
-        media_file_id=None,
+        media_file_id=media_file_id,
+        media_type=media_type,
         processed=True,
         audio_transcribed=False,
         image_transcribed=False,
@@ -106,6 +120,43 @@ async def store_sent_message(
     session.add(db_message)
     logger.debug(f"Stored sent message message_id={message_id} in chat_id={chat_id}")
     return db_message
+
+
+async def store_message_poll_results(
+    session: AsyncSession,
+    poll_id: int,
+    poll_data: dict | None,
+    results_data: dict | None,
+) -> Message | None:
+    """Store latest poll/quiz update payload for the message associated with poll_id."""
+    result = await session.execute(
+        select(Message)
+        .filter(
+            Message.media_type == "poll",
+            Message.media_file_id == str(poll_id),
+        )
+        .order_by(Message.message_date.desc())
+        .limit(1)
+    )
+    message = result.scalar_one_or_none()
+    if message:
+        message.poll_results = json.dumps(
+            {
+                "poll_id": str(poll_id),
+                "poll": poll_data,
+                "results": results_data,
+                "updated_at": datetime.utcnow().isoformat(),
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+        )
+        logger.info(
+            f"Stored poll results for poll_id={poll_id} mapped to message_id={message.id} chat_id={message.chat_id}"
+        )
+        return message
+
+    logger.warning(f"No message found for poll update poll_id={poll_id}")
+    return None
 
 
 async def get_recent_messages(

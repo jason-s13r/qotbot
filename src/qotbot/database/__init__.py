@@ -4,6 +4,7 @@ from qotbot.database.models.chat import Chat, ChatMember
 from qotbot.database.models.message import Message
 from qotbot.database.messages import (
     store_message_from_event,
+    store_message_poll_results,
     get_recent_messages,
     get_chat_summary,
     get_chat_overall_summary,
@@ -36,6 +37,7 @@ __all__ = [
     "Message",
     "DailySummary",
     "store_message_from_event",
+    "store_message_poll_results",
     "get_recent_messages",
     "get_chat_summary",
     "get_chat_overall_summary",

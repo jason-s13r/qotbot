@@ -4,11 +4,13 @@ import os
 
 from openai import AsyncOpenAI
 from telethon import TelegramClient, events
+from telethon.tl import types as tl_types
 
 from qotbot.database import (
     init_db,
     get_session,
     store_message_from_event,
+    store_message_poll_results,
     create_or_update_bot_user,
     create_or_update_user_from_event,
     create_or_update_chat_from_event,
@@ -174,6 +176,25 @@ async def start():
             if not has_audio and not has_image and not has_video:
                 put_classification(chat_id, message_id)
                 logger.debug(f"Classification task queued for message_id={message_id}")
+
+        @bot.on(events.Raw)
+        async def handle_raw_update(update):
+            if not isinstance(update, tl_types.UpdateMessagePoll):
+                return
+
+            poll_id = update.poll_id
+            poll_data = update.poll.to_dict() if update.poll else None
+            results_data = update.results.to_dict() if update.results else None
+
+            async with get_session() as session:
+                updated = await store_message_poll_results(
+                    session,
+                    poll_id=poll_id,
+                    poll_data=poll_data,
+                    results_data=results_data,
+                )
+                if updated:
+                    await session.commit()
 
         logger.info("Bot started successfully")
         bot.loop.set_debug(True)
