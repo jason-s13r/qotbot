@@ -18,11 +18,13 @@ from fastmcp.resources import (
 )
 from fastmcp import Context
 from telethon import TelegramClient, hints
+from telethon.tl.functions.messages import SendVoteRequest
 from telethon.tl.types import (
     InputMediaDice,
     InputMediaPoll,
     Message,
     MessageEntityItalic,
+    MessageMediaPoll,
     Poll,
     PollAnswer,
     TextWithEntities,
@@ -47,9 +49,17 @@ class TelegramProvider(Provider):
         self._pickle_decode_guid = str(uuid.uuid4())
         # Dedupes repeated send_message tool calls for one response cycle.
         self._sent_message_fingerprints: set[str] = set()
+        self._is_bot: bool | None = None  # resolved lazily in _list_tools
+
+    async def _resolve_is_bot(self) -> bool:
+        if self._is_bot is None:
+            me = await self._client.get_me()
+            self._is_bot = bool(getattr(me, "bot", False))
+        return self._is_bot
 
     async def _list_tools(self) -> Sequence[Tool]:
-        return [
+        is_bot = await self._resolve_is_bot()
+        tools = [
             Tool.from_function(
                 self._get_chat_id,
                 name="get_chat_id",
@@ -86,7 +96,26 @@ class TelegramProvider(Provider):
                     "send_message as file_uri to actually send it. The media is not sent by this tool."
                 ),
             ),
+            Tool.from_function(
+                self._get_poll_results,
+                name="get_poll_results",
+                description=(
+                    "Fetch the current poll results for a message that contains a poll directly from Telegram. "
+                    "Returns the poll question, answer options with indices, vote counts, and total voters."
+                ),
+            ),
+            Tool.from_function(
+                self._send_poll_vote,
+                name="send_poll_vote",
+                description=(
+                    "Vote in a poll. Specify the message_id of the poll message and the option to vote for "
+                    "either by its 0-based index or by its exact text. Pass an empty list to retract your vote."
+                ),
+            ),
         ]
+        if is_bot:
+            tools = [t for t in tools if t.name != "send_poll_vote"]
+        return tools
 
     async def _list_resources(self):
         return [
@@ -136,6 +165,100 @@ class TelegramProvider(Provider):
     def _get_chat_id(self) -> int:
         """Get the chat ID."""
         return self._chat_id
+
+    async def _get_poll_results(self, message_id: int) -> dict:
+        """Fetch live poll results from Telegram for a message containing a poll."""
+        chat = await self._client.get_entity(self._chat_id)
+        msg: Message = await self._client.get_messages(chat, ids=message_id)
+        if msg is None:
+            return {"error": f"Message {message_id} not found."}
+        if not isinstance(msg.media, MessageMediaPoll):
+            return {"error": f"Message {message_id} does not contain a poll."}
+
+        poll = msg.media.poll
+        results = msg.media.results
+
+        question = poll.question.text if hasattr(poll.question, "text") else str(poll.question)
+
+        vote_counts = {r.option: r.voters for r in (results.results or [])}
+        chosen = {r.option for r in (results.results or []) if r.chosen}
+        correct = {r.option for r in (results.results or []) if getattr(r, "correct", False)}
+
+        options = []
+        for i, answer in enumerate(poll.answers):
+            opt_text = answer.text.text if hasattr(answer.text, "text") else str(answer.text)
+            entry = {
+                "index": i,
+                "option": opt_text,
+                "voters": vote_counts.get(answer.option, 0),
+                "chosen": answer.option in chosen,
+            }
+            if poll.quiz:
+                entry["correct"] = answer.option in correct
+            options.append(entry)
+
+        return {
+            "message_id": message_id,
+            "question": question,
+            "options": options,
+            "total_voters": results.total_voters or 0,
+            "closed": poll.closed,
+            "quiz": poll.quiz,
+            "multiple_choice": poll.multiple_choice,
+        }
+
+    async def _send_poll_vote(
+        self,
+        message_id: int,
+        options: list[int | str],
+    ) -> dict:
+        """Vote in a poll. Each entry in options is either a 0-based index or the exact option text.
+        Pass an empty list to retract the current vote."""
+        chat = await self._client.get_entity(self._chat_id)
+        msg: Message = await self._client.get_messages(chat, ids=message_id)
+        if msg is None:
+            return {"error": f"Message {message_id} not found."}
+        if not isinstance(msg.media, MessageMediaPoll):
+            return {"error": f"Message {message_id} does not contain a poll."}
+
+        poll = msg.media.poll
+        if poll.closed:
+            return {"error": "Poll is closed and no longer accepts votes."}
+
+        chosen_bytes: list[bytes] = []
+        for opt in options:
+            if isinstance(opt, int):
+                if opt < 0 or opt >= len(poll.answers):
+                    return {"error": f"Option index {opt} is out of range (0–{len(poll.answers) - 1})."}
+                chosen_bytes.append(poll.answers[opt].option)
+            else:
+                match = next(
+                    (
+                        a.option
+                        for a in poll.answers
+                        if (a.text.text if hasattr(a.text, "text") else str(a.text)) == opt
+                    ),
+                    None,
+                )
+                if match is None:
+                    valid = [a.text.text if hasattr(a.text, "text") else str(a.text) for a in poll.answers]
+                    return {"error": f"Option {opt!r} not found. Valid options: {valid}"}
+                chosen_bytes.append(match)
+
+        await self._client(SendVoteRequest(
+            peer=chat,
+            msg_id=message_id,
+            options=chosen_bytes,
+        ))
+
+        if not chosen_bytes:
+            return {"message_id": message_id, "result": "vote retracted"}
+        voted_texts = [
+            (a.text.text if hasattr(a.text, "text") else str(a.text))
+            for a in poll.answers
+            if a.option in chosen_bytes
+        ]
+        return {"message_id": message_id, "result": "voted", "options": voted_texts}
 
     async def _send_message(
         self,

@@ -1,6 +1,7 @@
+import base64
 import logging
 import json
-from datetime import datetime
+from datetime import datetime, UTC
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from telethon import events
@@ -15,13 +16,37 @@ from qotbot.database.models.user import User
 logger = logging.getLogger(__name__)
 
 
-def _extract_poll_metadata(message_obj) -> tuple[str | None, str | None]:
-    """Extract poll metadata for message persistence and later lookup."""
+def _poll_json_dumps(obj: dict) -> str:
+    """JSON-serialise a Telethon poll/results dict, encoding bytes as base64 strings."""
+    def _default(o):
+        if isinstance(o, bytes):
+            return base64.b64encode(o).decode("ascii")
+        raise TypeError(f"Object of type {o.__class__.__name__} is not JSON serializable")
+    return json.dumps(obj, ensure_ascii=True, sort_keys=True, default=_default)
+
+
+def _extract_poll_metadata(message_obj) -> tuple[str | None, str | None, str | None]:
+    """Extract poll metadata for message persistence and later lookup.
+
+    Returns (media_type, media_file_id, poll_results_json).
+    poll_results_json contains the initial poll definition (question + options) so
+    the LLM can understand what the poll is about even before any votes are cast.
+    """
     media = getattr(message_obj, "media", None)
     poll = getattr(media, "poll", None)
     if not poll:
-        return None, None
-    return "poll", str(poll.id)
+        return None, None, None
+
+    results = getattr(media, "results", None)
+    poll_results_json = _poll_json_dumps(
+        {
+            "poll_id": str(poll.id),
+            "poll": poll.to_dict(),
+            "results": results.to_dict() if results else None,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+    )
+    return "poll", str(poll.id), poll_results_json
 
 
 async def store_message_from_event(
@@ -44,7 +69,7 @@ async def store_message_from_event(
 
     has_image = event.photo is not None or event.sticker is not None
     has_audio = event.audio is not None or event.voice is not None
-    media_type, media_file_id = _extract_poll_metadata(event.message)
+    media_type, media_file_id, initial_poll_results = _extract_poll_metadata(event.message)
 
     message = Message(
         id=message_id,
@@ -58,6 +83,7 @@ async def store_message_from_event(
         ),
         media_file_id=media_file_id,
         media_type=media_type,
+        poll_results=initial_poll_results,
         has_image=has_image,
         has_audio=has_audio,
         processed=False,
@@ -94,7 +120,7 @@ async def store_sent_message(
     """
     message_id = message.id
     sender_id = message.sender_id
-    media_type, media_file_id = _extract_poll_metadata(message)
+    media_type, media_file_id, initial_poll_results = _extract_poll_metadata(message)
 
     db_message = Message(
         id=message_id,
@@ -108,6 +134,7 @@ async def store_sent_message(
         ),
         media_file_id=media_file_id,
         media_type=media_type,
+        poll_results=initial_poll_results,
         processed=True,
         audio_transcribed=False,
         image_transcribed=False,
@@ -140,15 +167,13 @@ async def store_message_poll_results(
     )
     message = result.scalar_one_or_none()
     if message:
-        message.poll_results = json.dumps(
+        message.poll_results = _poll_json_dumps(
             {
                 "poll_id": str(poll_id),
                 "poll": poll_data,
                 "results": results_data,
-                "updated_at": datetime.utcnow().isoformat(),
-            },
-            ensure_ascii=True,
-            sort_keys=True,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
         )
         logger.info(
             f"Stored poll results for poll_id={poll_id} mapped to message_id={message.id} chat_id={message.chat_id}"
