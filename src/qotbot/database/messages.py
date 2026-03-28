@@ -100,6 +100,26 @@ async def store_message_from_event(
     return message
 
 
+async def update_message_from_edit_event(
+    session: AsyncSession, event: events.MessageEdited.Event
+) -> Message | None:
+    """Update only message text for a Telegram edit event."""
+    chat_id = event.chat_id
+    message_id = event.message.id
+    message = await session.get(Message, (chat_id, message_id))
+
+    if message is None:
+        logger.debug(
+            f"Edited message not found in DB, skipping message_id={message_id} chat_id={chat_id}"
+        )
+        return None
+
+    message.text = event.raw_text
+
+    logger.debug(f"Updated edited message message_id={message_id} in chat_id={chat_id}")
+    return message
+
+
 async def store_sent_message(
     session: AsyncSession,
     message: telethon.tl.custom.Message,

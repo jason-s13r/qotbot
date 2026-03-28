@@ -10,6 +10,7 @@ from qotbot.database import (
     init_db,
     get_session,
     store_message_from_event,
+    update_message_from_edit_event,
     store_message_poll_results,
     create_or_update_bot_user,
     create_or_update_user_from_event,
@@ -122,7 +123,7 @@ async def start():
 
         @bot.on(events.NewMessage)
         async def handle_incoming_event(event: events.NewMessage.Event):
-            if event.raw_text.startswith("/"):
+            if (event.raw_text or "").startswith("/"):
                 return
 
             logger.info(
@@ -176,6 +177,19 @@ async def start():
             if not has_audio and not has_image and not has_video:
                 put_classification(chat_id, message_id)
                 logger.debug(f"Classification task queued for message_id={message_id}")
+
+        @bot.on(events.MessageEdited)
+        async def handle_edited_event(event: events.MessageEdited.Event):
+            if (event.raw_text or "").startswith("/"):
+                return
+
+            logger.info(
+                f"Edited message: chat_id={event.chat_id}, message_id={event.id}, sender_id={event.sender_id}"
+            )
+
+            async with get_session() as session:
+                await update_message_from_edit_event(session, event)
+                await session.commit()
 
         @bot.on(events.Raw)
         async def handle_raw_update(update):
