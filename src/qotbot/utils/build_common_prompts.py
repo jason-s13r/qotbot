@@ -40,6 +40,26 @@ def _format_poll_results(poll_results_json: str) -> str:
         return f"Poll: {poll_results_json}"
 
 
+def _format_button_options(button_options_json: str) -> str:
+    try:
+        data = json.loads(button_options_json)
+        buttons = data.get("buttons") or []
+        if not buttons:
+            return "Buttons: none"
+
+        parts = []
+        for button in buttons:
+            idx = button.get("index")
+            row = button.get("row")
+            column = button.get("column")
+            text = button.get("text", "")
+            parts.append(f"{idx}:{text} (row {row}, col {column})")
+
+        return f"Buttons: {', '.join(parts)}"
+    except Exception:
+        return f"Buttons: {button_options_json}"
+
+
 def format_message_for_prompt(message: Message) -> str:
     return (
         f"<message id={message.id} sender_id={message.sender_id} sender_name={get_sender_name(message.sender)} timestamp={message.message_date.isoformat()} reply_to={message.reply_to_message_id or 'None'}>"
@@ -47,6 +67,7 @@ def format_message_for_prompt(message: Message) -> str:
         f"{f' [Image: {message.image_description}]' if message.image_description else ''}"
         f"{f' [Audio: {message.audio_transcription}]' if message.audio_transcription else ''}"
         f"{f' [{_format_poll_results(message.poll_results)}]' if message.poll_results else ''}"
+        f"{f' [{_format_button_options(message.button_options)}]' if message.button_options else ''}"
         f"</message>"
     )
 

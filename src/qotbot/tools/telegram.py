@@ -112,9 +112,29 @@ class TelegramProvider(Provider):
                     "either by its 0-based index or by its exact text. Pass an empty list to retract your vote."
                 ),
             ),
+            Tool.from_function(
+                self._get_message_button_options,
+                name="get_message_button_options",
+                description=(
+                    "Get clickable button options for a message with Telegram buttons. "
+                    "Returns each button with 0-based index, row, column, and text."
+                ),
+            ),
+            Tool.from_function(
+                self._click_message_button,
+                name="click_message_button",
+                description=(
+                    "Click a Telegram button in a message. Select exactly one of: button_index, "
+                    "button_text, or (row and column)."
+                ),
+            ),
         ]
         if is_bot:
-            tools = [t for t in tools if t.name != "send_poll_vote"]
+            tools = [
+                t
+                for t in tools
+                if t.name not in {"send_poll_vote", "click_message_button"}
+            ]
         return tools
 
     async def _list_resources(self):
@@ -259,6 +279,161 @@ class TelegramProvider(Provider):
             if a.option in chosen_bytes
         ]
         return {"message_id": message_id, "result": "voted", "options": voted_texts}
+
+    async def _get_message_button_options(self, message_id: int) -> dict:
+        """Return clickable button options for a Telegram message."""
+        chat = await self._client.get_entity(self._chat_id)
+        msg: Message = await self._client.get_messages(chat, ids=message_id)
+        if msg is None:
+            return {"error": f"Message {message_id} not found."}
+
+        buttons = getattr(msg, "buttons", None)
+        if not buttons:
+            return {
+                "message_id": message_id,
+                "has_buttons": False,
+                "buttons": [],
+            }
+
+        flattened = []
+        idx = 0
+        for row_index, row in enumerate(buttons):
+            for column_index, button in enumerate(row):
+                flattened.append(
+                    {
+                        "index": idx,
+                        "row": row_index,
+                        "column": column_index,
+                        "text": getattr(button, "text", "") or "",
+                    }
+                )
+                idx += 1
+
+        return {
+            "message_id": message_id,
+            "has_buttons": True,
+            "buttons": flattened,
+        }
+
+    async def _click_message_button(
+        self,
+        message_id: int,
+        button_index: int | None = None,
+        button_text: str | None = None,
+        row: int | None = None,
+        column: int | None = None,
+    ) -> dict:
+        """Click a Telegram message button by index, exact text, or row/column position."""
+        selectors = 0
+        selectors += 1 if button_index is not None else 0
+        selectors += 1 if button_text is not None else 0
+        selectors += 1 if (row is not None or column is not None) else 0
+
+        if selectors != 1:
+            return {
+                "error": (
+                    "Specify exactly one selector: button_index, button_text, "
+                    "or (row and column)."
+                )
+            }
+
+        if (row is None) != (column is None):
+            return {"error": "Both row and column must be provided together."}
+
+        chat = await self._client.get_entity(self._chat_id)
+        msg: Message = await self._client.get_messages(chat, ids=message_id)
+        if msg is None:
+            return {"error": f"Message {message_id} not found."}
+
+        buttons = getattr(msg, "buttons", None)
+        if not buttons:
+            return {"error": f"Message {message_id} does not contain clickable buttons."}
+
+        try:
+            if button_index is not None:
+                if button_index < 0:
+                    return {"error": "button_index must be >= 0."}
+                await msg.click(i=button_index)
+
+                selected = await self._button_at_flat_index(msg, button_index)
+                return {
+                    "message_id": message_id,
+                    "result": "clicked",
+                    "selector": {"button_index": button_index},
+                    "button": selected,
+                }
+
+            if button_text is not None:
+                await msg.click(text=button_text)
+                return {
+                    "message_id": message_id,
+                    "result": "clicked",
+                    "selector": {"button_text": button_text},
+                }
+
+            await msg.click(i=row, j=column)
+            selected = await self._button_at_position(msg, row, column)
+            return {
+                "message_id": message_id,
+                "result": "clicked",
+                "selector": {"row": row, "column": column},
+                "button": selected,
+            }
+        except Exception as e:
+            logger.error(
+                "Error clicking button for message_id=%s in chat_id=%s: %s",
+                message_id,
+                self._chat_id,
+                e,
+                exc_info=True,
+            )
+            return {"error": f"Failed to click button: {str(e)}"}
+
+    async def _button_at_flat_index(self, msg: Message, index: int) -> dict | None:
+        buttons = getattr(msg, "buttons", None)
+        if not buttons:
+            return None
+
+        idx = 0
+        for row_index, row in enumerate(buttons):
+            for column_index, button in enumerate(row):
+                if idx == index:
+                    return {
+                        "index": idx,
+                        "row": row_index,
+                        "column": column_index,
+                        "text": getattr(button, "text", "") or "",
+                    }
+                idx += 1
+
+        return None
+
+    async def _button_at_position(
+        self, msg: Message, row: int, column: int
+    ) -> dict | None:
+        buttons = getattr(msg, "buttons", None)
+        if not buttons:
+            return None
+        if row < 0 or row >= len(buttons):
+            return None
+        if column < 0 or column >= len(buttons[row]):
+            return None
+
+        button = buttons[row][column]
+        flat_index = 0
+        for row_index, buttons_row in enumerate(buttons):
+            if row_index < row:
+                flat_index += len(buttons_row)
+            else:
+                break
+        flat_index += column
+
+        return {
+            "index": flat_index,
+            "row": row,
+            "column": column,
+            "text": getattr(button, "text", "") or "",
+        }
 
     async def _send_message(
         self,

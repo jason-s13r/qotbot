@@ -30,6 +30,7 @@ class Message(Base):
     image_description = Column(Text, nullable=True)
     audio_transcription = Column(Text, nullable=True)
     poll_results = Column(Text, nullable=True)
+    button_options = Column(Text, nullable=True)
     classification_reason = Column(Text, nullable=True)
     is_approved = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -25,6 +25,38 @@ def _poll_json_dumps(obj: dict) -> str:
     return json.dumps(obj, ensure_ascii=True, sort_keys=True, default=_default)
 
 
+def _extract_button_options(message_obj) -> str | None:
+    """Extract clickable button metadata from a Telegram message as JSON text."""
+    rows = getattr(message_obj, "buttons", None)
+    if not rows:
+        return None
+
+    flattened = []
+    index = 0
+    for row_index, row in enumerate(rows):
+        for column_index, button in enumerate(row):
+            data = getattr(button, "data", None)
+            flattened.append(
+                {
+                    "index": index,
+                    "row": row_index,
+                    "column": column_index,
+                    "text": getattr(button, "text", "") or "",
+                    "url": getattr(button, "url", None),
+                    "data": base64.b64encode(data).decode("ascii")
+                    if isinstance(data, bytes)
+                    else data,
+                }
+            )
+            index += 1
+
+    payload = {
+        "buttons": flattened,
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+    return json.dumps(payload, ensure_ascii=True, sort_keys=True)
+
+
 def _extract_poll_metadata(message_obj) -> tuple[str | None, str | None, str | None]:
     """Extract poll metadata for message persistence and later lookup.
 
@@ -70,6 +102,7 @@ async def store_message_from_event(
     has_image = event.photo is not None or event.sticker is not None
     has_audio = event.audio is not None or event.voice is not None
     media_type, media_file_id, initial_poll_results = _extract_poll_metadata(event.message)
+    button_options = _extract_button_options(event.message)
 
     message = Message(
         id=message_id,
@@ -84,6 +117,7 @@ async def store_message_from_event(
         media_file_id=media_file_id,
         media_type=media_type,
         poll_results=initial_poll_results,
+        button_options=button_options,
         has_image=has_image,
         has_audio=has_audio,
         processed=False,
@@ -141,6 +175,7 @@ async def store_sent_message(
     message_id = message.id
     sender_id = message.sender_id
     media_type, media_file_id, initial_poll_results = _extract_poll_metadata(message)
+    button_options = _extract_button_options(message)
 
     db_message = Message(
         id=message_id,
@@ -155,6 +190,7 @@ async def store_sent_message(
         media_file_id=media_file_id,
         media_type=media_type,
         poll_results=initial_poll_results,
+        button_options=button_options,
         processed=True,
         audio_transcribed=False,
         image_transcribed=False,
