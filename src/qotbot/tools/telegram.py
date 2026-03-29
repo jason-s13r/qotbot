@@ -128,6 +128,15 @@ class TelegramProvider(Provider):
                     "button_text, or (row and column)."
                 ),
             ),
+            Tool.from_function(
+                self._get_user_profile_photo,
+                name="get_user_profile_photo",
+                description=(
+                    "Get a user's profile photo. Returns a resource_uri that can be used with send_message "
+                    "as file_uri or passed to vision-capable models. User can be specified by username (e.g. 'john'), "
+                    "user_id (e.g. 123456), or phone number (e.g. '+1234567890')."
+                ),
+            ),
         ]
         if is_bot:
             tools = [
@@ -180,6 +189,12 @@ class TelegramProvider(Provider):
                 uri_template="telegram://message/{message_id}/media",
                 description="Access media bytes resource for use with other tools, such as sending as a file in a send_message.",
             ),
+            ResourceTemplate.from_function(
+                self._get_user_profile_photo,
+                name="get_user_profile_photo",
+                uri_template="telegram://user/{user}/profile_photo",
+                description="Access user profile photo bytes resource for use with other tools, such as sending as a file or passing to vision models.",
+            ),
         ]
 
     def _get_chat_id(self) -> int:
@@ -198,15 +213,21 @@ class TelegramProvider(Provider):
         poll = msg.media.poll
         results = msg.media.results
 
-        question = poll.question.text if hasattr(poll.question, "text") else str(poll.question)
+        question = (
+            poll.question.text if hasattr(poll.question, "text") else str(poll.question)
+        )
 
         vote_counts = {r.option: r.voters for r in (results.results or [])}
         chosen = {r.option for r in (results.results or []) if r.chosen}
-        correct = {r.option for r in (results.results or []) if getattr(r, "correct", False)}
+        correct = {
+            r.option for r in (results.results or []) if getattr(r, "correct", False)
+        }
 
         options = []
         for i, answer in enumerate(poll.answers):
-            opt_text = answer.text.text if hasattr(answer.text, "text") else str(answer.text)
+            opt_text = (
+                answer.text.text if hasattr(answer.text, "text") else str(answer.text)
+            )
             entry = {
                 "index": i,
                 "option": opt_text,
@@ -249,27 +270,37 @@ class TelegramProvider(Provider):
         for opt in options:
             if isinstance(opt, int):
                 if opt < 0 or opt >= len(poll.answers):
-                    return {"error": f"Option index {opt} is out of range (0–{len(poll.answers) - 1})."}
+                    return {
+                        "error": f"Option index {opt} is out of range (0–{len(poll.answers) - 1})."
+                    }
                 chosen_bytes.append(poll.answers[opt].option)
             else:
                 match = next(
                     (
                         a.option
                         for a in poll.answers
-                        if (a.text.text if hasattr(a.text, "text") else str(a.text)) == opt
+                        if (a.text.text if hasattr(a.text, "text") else str(a.text))
+                        == opt
                     ),
                     None,
                 )
                 if match is None:
-                    valid = [a.text.text if hasattr(a.text, "text") else str(a.text) for a in poll.answers]
-                    return {"error": f"Option {opt!r} not found. Valid options: {valid}"}
+                    valid = [
+                        a.text.text if hasattr(a.text, "text") else str(a.text)
+                        for a in poll.answers
+                    ]
+                    return {
+                        "error": f"Option {opt!r} not found. Valid options: {valid}"
+                    }
                 chosen_bytes.append(match)
 
-        await self._client(SendVoteRequest(
-            peer=chat,
-            msg_id=message_id,
-            options=chosen_bytes,
-        ))
+        await self._client(
+            SendVoteRequest(
+                peer=chat,
+                msg_id=message_id,
+                options=chosen_bytes,
+            )
+        )
 
         if not chosen_bytes:
             return {"message_id": message_id, "result": "vote retracted"}
@@ -347,7 +378,9 @@ class TelegramProvider(Provider):
 
         buttons = getattr(msg, "buttons", None)
         if not buttons:
-            return {"error": f"Message {message_id} does not contain clickable buttons."}
+            return {
+                "error": f"Message {message_id} does not contain clickable buttons."
+            }
 
         try:
             if button_index is not None:
@@ -569,6 +602,29 @@ class TelegramProvider(Provider):
         except Exception as e:
             logger.error(
                 f"Error downloading media from message_id={message_id}: {e}",
+                exc_info=True,
+            )
+            raise e
+
+    async def _get_user_profile_photo(self, user: str | int):
+        """Download a user's profile photo and return it as a resource."""
+        try:
+            entity = await self._client.get_entity(user)
+            photo = await self._client.download_profile_photo(entity, file=bytes)
+
+            if photo is None:
+                return None
+
+            mime_type = "image/jpeg"
+            user_id = getattr(entity, "id", "unknown")
+
+            return ResourceResult(
+                contents=[ResourceContent(content=photo, mime_type=mime_type)],
+                meta={"file_name": f"profile_photo_{user_id}.jpg", "user_id": user_id},
+            )
+        except Exception as e:
+            logger.error(
+                f"Error downloading profile photo for user={user}: {e}",
                 exc_info=True,
             )
             raise e
