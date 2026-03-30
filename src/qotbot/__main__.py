@@ -215,10 +215,11 @@ async def start():
         bot.loop.set_debug(True)
 
         logger.info("Starting worker tasks")
-        asyncio.create_task(image_worker(bot, llmclient))
-        asyncio.create_task(audio_worker())
-        asyncio.create_task(classification_worker(bot, llmclient))
-        asyncio.create_task(response_worker(bot, llmclient))
+        for i in range(4):
+            asyncio.create_task(image_worker(bot, llmclient))
+            asyncio.create_task(audio_worker())
+            asyncio.create_task(classification_worker(bot, llmclient))
+            asyncio.create_task(response_worker(bot, llmclient))
 
         await bot.run_until_disconnected()
 
