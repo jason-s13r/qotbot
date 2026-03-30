@@ -74,6 +74,7 @@ logging.getLogger('fastmcp').setLevel(logging.INFO)
 logging.getLogger('openai').setLevel(logging.INFO)
 logging.getLogger('ollama').setLevel(logging.INFO)
 logging.getLogger('greenlet').setLevel(logging.INFO)
+logging.getLogger('mcp').setLevel(logging.INFO)
 # logging.getLogger('ffmpeg').setLevel(logging.INFO)
 # logging.getLogger('faster_whisper').setLevel(logging.INFO)
 
@@ -87,7 +88,7 @@ async def start():
     await init_db(DATABASE_PATH)
     logger.info("Initialising logs database")
     await init_db(LOGS_DB_PATH)
-    logger.addHandler(SQLiteHandler())
+    logging.getLogger().addHandler(SQLiteHandler())
 
     logger.info("Connecting to Telegram")
 

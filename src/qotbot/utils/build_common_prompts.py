@@ -1,3 +1,4 @@
+from string import Template
 import json
 
 from qotbot.database.database import get_session
@@ -102,18 +103,22 @@ async def build_common_prompts(
         )
         new_messages_content = format_messages_for_prompt(messages)
 
+        user_prompt = Template(
+            """Given the following chat information:
+<chat_summary>\n$overall_summary\n</chat_summary>
+<chat_history>\n$recent_messages_text\n</chat_history>
+Please use the appropriate tools regarding:
+<new_messages>\n$new_messages_content\n</new_messages>"""
+        )
+
         common_prompts = [
             {
                 "role": "user",
-                "content": f"<chat_summary>\n{overall_summary or ''}\n</chat_summary>",
-            },
-            {
-                "role": "user",
-                "content": f"<chat_history>\n{recent_messages_text}\n</chat_history>",
-            },
-            {
-                "role": "user",
-                "content": f"<new_messages>\n{new_messages_content}\n</new_messages>",
+                "content": user_prompt.substitute(
+                    overall_summary=overall_summary,
+                    recent_messages_text=recent_messages_text,
+                    new_messages_content=new_messages_content,
+                ),
             },
         ]
 
