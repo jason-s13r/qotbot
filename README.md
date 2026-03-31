@@ -9,9 +9,9 @@ A Telegram bot with LLM integration for chat interactions, transcription, and mo
 - **Image Description**: Describes images and stickers using vision models
 - **Message Classification**: Classifies messages to determine response priority
 - **Chat Summarisation**: Generates summaries of chat conversations
-- **Commands**: `/bye`, `/enable`, `/disable`, `/transcript`, `/classification`, `/summary`
-- **Tools**: Wolfram Alpha, web search, weather, LOLcryption, date/time tools, Telegram messaging tools
-- **Database**: Stores messages, chats, users, and summaries in SQLite
+- **Commands**: `/help`, `/enable`, `/disable`, `/summary`, `/rules`, and admin commands
+- **Tools**: Web search, weather, TODO management, logs viewer, LOLcryption, date/time tools, Telegram messaging tools
+- **Database**: Stores messages, chats, users, summaries, rules, and TODOs in SQLite
 - **Async Workers**: Separate workers for audio transcription, image description, classification, and responses
 
 ## Requirements
@@ -54,8 +54,7 @@ Optional variables:
 - `WHISPER_MODEL` - Whisper model for audio transcription (default: `turbo`)
 - `WHISPER_LANGUAGE` - Language code for Whisper (default: auto-detect)
 - `WEB_TIMEOUT` - HTTP request timeout in seconds (default: `20`)
-- `MAX_TRANSCRIPT_DURATION` - Maximum audio duration in seconds for transcription (default: `120`)
-- `MAX_BATCH_SIZE` - Maximum batch size for response worker (default: `10`)
+- `MAX_TRANSCRIPT_DURATION` - Maximum audio duration in seconds for transcription (default: `300`)
 - `DATA_PATH` - Path for database and logs (default: `./data`)
 
 ### 3. Install dependencies
@@ -72,50 +71,23 @@ uv sync
 uv run --env-file .env qotbot
 ```
 
-## Docker
+## Container
 
-Build and run with Docker:
+Build and run with Podman or Docker:
 
 ```bash
-docker build -t qotbot .
-docker run --env-file .env qotbot
-```
+# build container image:
+podman build -t qotbot .
 
-## Project Structure
-
-```
-src/qotbot/
-├── __main__.py          # Bot entry point
-├── llm/                 # LLM integration
-│   ├── agent.py         # Base agent
-│   ├── chatter.py       # Chat responses
-│   ├── classifier.py    # Message classification
-│   ├── summariser.py    # Chat summarisation
-│   └── image_describer.py  # Image description
-├── tools/               # MCP tools
-│   ├── telegram.py      # Telegram provider
-│   ├── web_tools.py     # Web search & weather
-│   ├── lolcryption.py   # Encryption utilities
-│   ├── date_tools.py    # Date/time utilities
-│   └── classification_tools.py  # Message classification
-├── utils/               # Utilities
-│   ├── whisper.py       # Whisper transcription
-│   ├── media.py         # Media handling
-│   ├── config.py        # Configuration
-│   └── build_common_prompts.py  # Prompt formatting
-├── workers/             # Async workers
-│   ├── audio_worker.py  # Audio transcription worker
-│   ├── image_worker.py  # Image description worker
-│   ├── classification_worker.py  # Message classification worker
-│   ├── response_worker.py  # Response generation worker
-│   └── models/          # Worker models
-├── database/            # SQLite database
-│   ├── database.py      # Database setup
-│   ├── messages.py      # Message storage
-│   ├── chats.py         # Chat storage
-│   ├── users.py         # User storage
-│   └── models/          # SQLAlchemy models
-└── __init__.py
+# run container:
+podman run --replace \
+           --detach \
+           --restart unless-stopped \
+           --name "qotbot" \
+           --env-file=".env" \
+           --tmpfs /tmp/qotbot:size=5g \
+           -v qotbot-data:/app/data:z \
+           -it qotbot
 ```
 
 ## License
