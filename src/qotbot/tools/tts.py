@@ -24,7 +24,7 @@ def _load_kokoro_model():
 
 
 @tts_tool.resource(
-    "audio://speech/{name}", mime_type="audio/ogg", meta={"file_name": "audio.oga"}
+    "audio://speech/{name}", mime_type="audio/ogg", meta={"file_name": "audio.ogg"}
 )
 def get_speech_audio(name: str) -> ResourceResult:
     """
@@ -69,7 +69,7 @@ def generate_speech(
     audio_array, sample_rate = model.create(text, voice=voice, speed=speed)
 
     file_id = str(uuid.uuid4())
-    file_name = f"speech_{file_id}.oga"
+    file_name = f"speech_{file_id}.ogg"
 
     sf.write(
         TEMP_FILES_PATH / file_name,
