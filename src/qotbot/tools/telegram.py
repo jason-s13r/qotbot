@@ -518,24 +518,14 @@ class TelegramProvider(Provider):
                         file = await self._client.upload_file(file, file_name=file_name)
 
                 await asyncio.sleep(0.1)
-                response = None
-                if voice_note:
-                    response = await self._client.send_file(
-                        self._chat_id,
-                        file,
-                        voice_note=True,
-                        reply_to=reply_to,
-                        schedule=schedule,
-                    )
-                else:
-                    response = await self._client.send_message(
-                        self._chat_id,
-                        message,
-                        reply_to=reply_to,
-                        file=file,
-                        schedule=schedule,
-                        parse_mode="markdown",
-                    )
+                response = await self._client.send_message(
+                    self._chat_id,
+                    message,
+                    reply_to=reply_to,
+                    file=file,
+                    schedule=schedule,
+                    parse_mode="markdown",
+                )
                 await self._store_sent_message(response)
                 with_message_id = f"message_id={response.id}"
                 in_reply_to = f"reply_to={reply_to}" if reply_to is not None else ""
