@@ -27,6 +27,8 @@ class Message(Base):
     media_type = Column(String, nullable=True)
     has_image = Column(Boolean, default=False)
     has_audio = Column(Boolean, default=False)
+    has_video = Column(Boolean, default=False)
+    has_voice = Column(Boolean, default=False)
     image_description = Column(Text, nullable=True)
     audio_transcription = Column(Text, nullable=True)
     poll_results = Column(Text, nullable=True)

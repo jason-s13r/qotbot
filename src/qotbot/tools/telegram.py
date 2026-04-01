@@ -2,6 +2,8 @@ import asyncio
 import base64
 import hashlib
 import logging
+import os
+from pathlib import Path
 import pickle
 import random
 import re
@@ -32,7 +34,7 @@ from telethon.tl.types import (
 
 from qotbot.database.database import get_session
 from qotbot.database.messages import store_sent_message
-from qotbot.utils.config import DATABASE_PATH
+from qotbot.utils.config import DATABASE_PATH, TEMP_FILES_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +99,16 @@ class TelegramProvider(Provider):
                 ),
             ),
             Tool.from_function(
+                lambda user_id: dict(
+                    resource_uri=f"telegram://user/{user_id}/profile_photo"
+                ),
+                name="get_user_profile_photo",
+                description=(
+                    "Prepare resource uri of user's profile photo. Returns a resource_uri that MUST be passed to "
+                    "send_message as file_uri to actually send it. The media is not sent by this tool."
+                ),
+            ),
+            Tool.from_function(
                 self._get_poll_results,
                 name="get_poll_results",
                 description=(
@@ -128,16 +140,8 @@ class TelegramProvider(Provider):
                     "button_text, or (row and column)."
                 ),
             ),
-            Tool.from_function(
-                self._get_user_profile_photo,
-                name="get_user_profile_photo",
-                description=(
-                    "Get a user's profile photo. Returns a resource_uri that can be used with send_message "
-                    "as file_uri or passed to vision-capable models. User can be specified by username (e.g. 'john'), "
-                    "user_id (e.g. 123456), or phone number (e.g. '+1234567890')."
-                ),
-            ),
         ]
+
         if is_bot:
             tools = [
                 t
@@ -178,21 +182,21 @@ class TelegramProvider(Provider):
     async def _list_resource_templates(self):
         return [
             ResourceTemplate.from_function(
-                self._get_telegram_cache_resource,
-                name="get_telegram_cache_resource",
-                uri_template="telegram://cache/{cache_id}",
+                self._telegram_cache_resource,
+                name="telegram_cache_resource",
+                uri_template="cache://cache/{cache_id}",
                 description="Access a cached FileLike resource for sending as a file in a message.",
             ),
             ResourceTemplate.from_function(
-                self._get_message_media,
-                name="get_message_media",
+                self._message_media_resource,
+                name="message_media_resource",
                 uri_template="telegram://message/{message_id}/media",
                 description="Access media bytes resource for use with other tools, such as sending as a file in a send_message.",
             ),
             ResourceTemplate.from_function(
-                self._get_user_profile_photo,
-                name="get_user_profile_photo",
-                uri_template="telegram://user/{user}/profile_photo",
+                self._user_profile_photo_resource,
+                name="user_profile_photo_resource",
+                uri_template="telegram://user/{user_id}/profile_photo",
                 description="Access user profile photo bytes resource for use with other tools, such as sending as a file or passing to vision models.",
             ),
         ]
@@ -475,6 +479,7 @@ class TelegramProvider(Provider):
         reply_to: int | None = None,
         schedule: hints.DateLike | None = None,
         file_uri: str | None = None,
+        voice_note: bool | None = None,
     ):
         try:
             fingerprint = self._message_fingerprint(
@@ -513,9 +518,11 @@ class TelegramProvider(Provider):
                         file = await self._client.upload_file(file, file_name=file_name)
 
                 await asyncio.sleep(0.1)
+                # text = None if voice_note else message
+                text = message
                 response = await self._client.send_message(
                     self._chat_id,
-                    message,
+                    text,
                     reply_to=reply_to,
                     file=file,
                     schedule=schedule,
@@ -568,66 +575,71 @@ class TelegramProvider(Provider):
         )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    def _get_telegram_cache_resource(self, cache_id: str):
-        uri = f"telegram://cache/{cache_id}"
+    def _telegram_cache_resource(self, cache_id: str):
+        uri = f"cache://cache/{cache_id}"
         entry = self._resource_cache.get(uri)
         if entry is None:
             raise KeyError(f"Unknown or expired cached resource: {uri}")
 
         return entry
 
-    async def _get_message_media(self, message_id: int):
+    async def _message_media_resource(self, message_id: int):
         """Download media from a message and return it as bytes."""
-        try:
-            chat = await self._client.get_entity(self._chat_id)
-            message: Message = await self._client.get_messages(chat, ids=message_id)
-            if not message:
-                return None
-            if not message.media:
-                return None
+        chat = await self._client.get_entity(self._chat_id)
+        message: Message = await self._client.get_messages(chat, ids=message_id)
+        if not message:
+            return None
+        if not message.media:
+            return None
 
-            data = await self._client.download_media(message, file=bytes)
-            mime_type = "application/octet-stream"
-            meta = {}
-            if message.photo:
-                mime_type = "image/jpeg"
-                meta["file_name"] = f"photo_{message_id}.jpg"
-            elif message.file and message.file.mime_type:
-                mime_type = message.file.mime_type
-                meta["file_name"] = message.file.name or f"file_{message_id}"
+        file = await self._client.download_media(message)
 
-            return ResourceResult(
-                contents=[ResourceContent(content=data, mime_type=mime_type)], meta=meta
+        if file is None:
+            return None
+
+        file_name = TEMP_FILES_PATH / Path(file).name
+        os.rename(file, file_name)
+
+        with open(file_name, "rb") as f:
+            blob = f.read()
+
+            resource = ResourceResult(
+                contents=[
+                    ResourceContent(
+                        content=blob,
+                        meta={"file_name": file_name.name},
+                    )
+                ],
+                meta={"file_name": file_name.name},
             )
-        except Exception as e:
-            logger.error(
-                f"Error downloading media from message_id={message_id}: {e}",
-                exc_info=True,
-            )
-            raise e
 
-    async def _get_user_profile_photo(self, user: str | int):
+            return resource
+
+    async def _user_profile_photo_resource(self, user_id: int):
         """Download a user's profile photo and return it as a resource."""
-        try:
-            entity = await self._client.get_entity(user)
-            photo = await self._client.download_profile_photo(entity, file=bytes)
+        entity = await self._client.get_entity(user_id)
+        photo = await self._client.download_profile_photo(entity)
 
-            if photo is None:
-                return None
+        if photo is None:
+            return None
 
-            mime_type = "image/jpeg"
-            user_id = getattr(entity, "id", "unknown")
+        file_name = TEMP_FILES_PATH / Path(photo).name
+        os.rename(photo, file_name)
 
-            return ResourceResult(
-                contents=[ResourceContent(content=photo, mime_type=mime_type)],
-                meta={"file_name": f"profile_photo_{user_id}.jpg", "user_id": user_id},
+        with open(file_name, "rb") as f:
+            blob = f.read()
+
+            resource = ResourceResult(
+                contents=[
+                    ResourceContent(
+                        content=blob,
+                        meta={"file_name": file_name.name},
+                    )
+                ],
+                meta={"file_name": file_name.name},
             )
-        except Exception as e:
-            logger.error(
-                f"Error downloading profile photo for user={user}: {e}",
-                exc_info=True,
-            )
-            raise e
+
+            return resource
 
     async def _create_poll(
         self,
@@ -667,7 +679,7 @@ class TelegramProvider(Provider):
         )
 
         cache_id = str(uuid.uuid4())
-        uri = f"telegram://cache/{cache_id}"
+        uri = f"cache://cache/{cache_id}"
 
         blob = base64.b64encode(pickle.dumps(input_poll)).decode()
 

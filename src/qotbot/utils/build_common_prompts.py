@@ -63,7 +63,7 @@ def _format_button_options(button_options_json: str) -> str:
 
 def format_message_for_prompt(message: Message) -> str:
     return (
-        f"<message id={message.id} sender_id={message.sender_id} sender_name={get_sender_name(message.sender)} timestamp={message.message_date.isoformat()} reply_to={message.reply_to_message_id or 'None'}>"
+        f"<message id={message.id} sender_id={message.sender_id} sender_name={get_sender_name(message.sender)} timestamp={message.message_date.isoformat()} reply_to={message.reply_to_message_id or 'None'} has_voice={message.has_voice}>"
         f"{message.text or ''}"
         f"{f' [Image: {message.image_description}]' if message.image_description else ''}"
         f"{f' [Audio: {message.audio_transcription}]' if message.audio_transcription else ''}"

@@ -16,6 +16,9 @@ dependencies = [
     "ollama>=0.6.1",
     "faster-whisper>=1.2.1",
     "greenlet>=3.3.2",
+    "kokoro-onnx>=0.1.0",
+    "soundfile>=0.13.0",
+    "numpy>=2.0.0",
 ]
 
 [build-system]

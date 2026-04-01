@@ -20,9 +20,17 @@ DATA_PATH = Path(os.getenv("DATA_PATH", "./data"))
 DATABASE_PATH = DATA_PATH / "database.db"
 LOGS_DB_PATH = DATA_PATH / "logs.db"
 LOG_PATH = DATA_PATH / "logs"
+TTS_MODELS_PATH = DATA_PATH / "models"
+TEMP_FILES_PATH = Path(os.getenv("TEMP_FILES_PATH", "./data/temp"))
 
 # Telegram
 TELEGRAM_BOT_OWNER = int(os.getenv("TELEGRAM_BOT_OWNER", 0))
 
 # Web tools
 WEB_TIMEOUT = int(os.getenv("WEB_TIMEOUT", 20))
+
+# Create necessary directories if they don't exist
+DATA_PATH.mkdir(parents=True, exist_ok=True)
+LOG_PATH.mkdir(parents=True, exist_ok=True)
+TTS_MODELS_PATH.mkdir(parents=True, exist_ok=True)
+TEMP_FILES_PATH.mkdir(parents=True, exist_ok=True)

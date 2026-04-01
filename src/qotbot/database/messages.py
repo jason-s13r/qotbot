@@ -101,6 +101,9 @@ async def store_message_from_event(
 
     has_image = event.photo is not None or event.sticker is not None
     has_audio = event.audio is not None or event.voice is not None
+    has_video = event.video_note is not None or event.video is not None
+    has_voice = event.voice is not None or event.video_note is not None
+    
     media_type, media_file_id, initial_poll_results = _extract_poll_metadata(event.message)
     button_options = _extract_button_options(event.message)
 
@@ -120,6 +123,8 @@ async def store_message_from_event(
         button_options=button_options,
         has_image=has_image,
         has_audio=has_audio,
+        has_video=has_video,
+        has_voice=has_voice,
         processed=False,
         audio_transcribed=False,
         image_transcribed=False,
@@ -376,6 +381,7 @@ async def get_messages_ready_for_response(
         .filter(
             (Message.has_image == False) | (Message.image_transcribed == True),
             (Message.has_audio == False) | (Message.audio_transcribed == True),
+            (Message.has_video == False) | (Message.audio_transcribed == True),
         )
         .order_by(Message.message_date.asc())
         .limit(limit)

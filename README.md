@@ -85,8 +85,8 @@ podman run --replace \
            --restart unless-stopped \
            --name "qotbot" \
            --env-file=".env" \
-           --tmpfs /tmp/qotbot:size=5g \
            -v qotbot-data:/app/data:z \
+           --tmpfs /app/data/temp:size=5g \
            -it qotbot
 ```
 

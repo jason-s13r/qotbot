@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import traceback
 from datetime import datetime, timezone
 
 from qotbot.database.database import get_log_session
@@ -14,7 +15,9 @@ class SQLiteHandler(logging.Handler):
         try:
             log_data = self.format(record)
             exc_info = (
-                self.formatException(record.exc_info) if record.exc_info else None
+                "".join(traceback.format_exception(*record.exc_info))
+                if record.exc_info
+                else None
             )
 
             try:
