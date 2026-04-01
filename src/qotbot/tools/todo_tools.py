@@ -55,7 +55,7 @@ async def create_todo_list(
 
 
 @todo_tools.tool
-async def get_todo_lists(chat_id: int, owner_id: int = None) -> str:
+async def get_todo_lists(chat_id: int, owner_id: int | None = None) -> str:
     """
     Get all todo lists for a chat, optionally filtered by owner.
 
